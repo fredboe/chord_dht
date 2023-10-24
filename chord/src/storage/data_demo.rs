@@ -19,13 +19,24 @@ use tonic::{Request, Response, Status};
 
 pub const DATA_PORT: u16 = 43355;
 
-pub struct SimpleDataHandle {
+/// # Explanation
+/// This struct is used for starting a simple data server that uses a simple HashMap as storage and
+/// to start the transfer_out process.
+///
+/// The data server provides basic functions for storing and retrieving data (in this case strings).
+///
+/// The transfer_out process subscribes to the DataTo characteristic and thus is notified by the chord
+/// layer of any key transfers out of this node. The transfer_out process then performs this key transfers.
+pub(crate) struct SimpleDataHandle {
     shutdown_server: oneshot::Sender<()>,
     transfer_out_handle: JoinHandle<()>,
 }
 
 impl SimpleDataHandle {
+    /// # Explanation
+    /// This function starts the data server and the transfer_out process.
     pub async fn start(notifier: Arc<ChordNotifier>) -> Result<Self> {
+        // the storage needs to be shared between the server and the transfer_out process
         let storage = Arc::new(Mutex::new(HashMap::new()));
         let shutdown_server = Self::start_server(notifier.clone(), storage.clone()).await?;
         let transfer_out_handle = Self::start_transfer_out_task(notifier, storage).await;
@@ -35,6 +46,8 @@ impl SimpleDataHandle {
         })
     }
 
+    /// # Explanation
+    /// Starts the actual data server.
     async fn start_server(
         notifier: Arc<ChordNotifier>,
         storage: Arc<Mutex<HashMap<String, String>>>,
@@ -56,6 +69,8 @@ impl SimpleDataHandle {
         Ok(shudown_sender)
     }
 
+    /// # Explanation
+    /// Starts the transfer_out process.
     async fn start_transfer_out_task(
         notifier: Arc<ChordNotifier>,
         storage: Arc<Mutex<HashMap<String, String>>>,
@@ -69,6 +84,8 @@ impl SimpleDataHandle {
         task_handle
     }
 
+    /// # Explanation
+    /// This function waits for new DataTo notifications and then processes these.
     async fn handle_transfer_out_subscription(
         mut subscription: Subscription<ChordNotification>,
         storage: Arc<Mutex<HashMap<String, String>>>,
@@ -85,6 +102,10 @@ impl SimpleDataHandle {
         }
     }
 
+    /// # Explanation
+    /// This function processes a single notification. It creates a client to the ip specified in the notification.
+    /// Then it searches the storage (HashMap) for all the keys that should be transfered.
+    /// And then all these keys are transfered to the ip.
     async fn transport_data_out(
         transfer_notification: TransferNotification,
         storage: Arc<Mutex<HashMap<String, String>>>,
@@ -112,11 +133,15 @@ impl SimpleDataHandle {
         Ok(())
     }
 
+    /// # Explantion
+    /// This function stops the transfer_out process and the data server.
     pub async fn stop(self) {
         self.transfer_out_handle.await.ok();
         self.shutdown_server.send(()).ok();
     }
 
+    /// # Explanation
+    /// This function creates a client to the data server of the given ip.
     pub async fn create_data_client(addr: IpAddr) -> Result<DataStorageClient<Channel>> {
         let uri = Uri::builder()
             .scheme("http")
@@ -129,7 +154,9 @@ impl SimpleDataHandle {
     }
 }
 
-pub struct SimpleStorage {
+/// # Explanation
+/// This is a simple data server that uses a hash map as the storage.
+pub(crate) struct SimpleStorage {
     storage: Arc<Mutex<HashMap<String, String>>>,
     notifier: Arc<ChordNotifier>,
 }
@@ -160,6 +187,9 @@ impl DataStorage for SimpleStorage {
         Ok(Response::new(Empty {}))
     }
 
+    /// # Explanation
+    /// This function checks with the notifier if the transfer of keys into this node is allowed.
+    /// And then it extends the current storage with all the keys in the request.
     async fn transfer_data(&self, request: Request<KeyValues>) -> Result<Response<Empty>, Status> {
         const NO_REMOTE_IP: &str = "Was not able to extract the remote ip out of the request.";
         const NO_ACCESS_GRANTED: &str = "The access to transfer data was not granted.";
@@ -175,6 +205,7 @@ impl DataStorage for SimpleStorage {
             ))
             .await
         {
+            // maybe filter all the allowed keys here
             let mut storage = self.storage.lock().await;
             storage.extend(
                 request

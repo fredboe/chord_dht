@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package storage;
+
+service DataStorage {
+  rpc lookup (Key) returns (OptionalValue);
+  rpc put (KeyValue) returns (Empty);
+
+  rpc transfer_data (KeyValues) returns (Empty);
+}
+
+message Empty {}
+
+message Key {
+  string key = 1;
+}
+
+message Value {
+  string value = 1;
+}
+
+message OptionalValue {
+  Value optional_value = 1;
+}
+
+message KeyValue {
+  string key = 1;
+  string value = 2;
+}
+
+message KeyValues {
+  repeated KeyValue key_values = 1;
+}
+
