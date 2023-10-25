@@ -159,10 +159,7 @@ impl Node for ChordNode {
             .await
             .map_err(|_| Status::not_found(COULD_NOT_CREATE_FINGER))?;
         let mut successor = self.finger_table.get_successor().await;
-
-        if in_ring_interval_exclusive(new_finger.id(), self.own_id, successor.id()) {
-            let _ = std::mem::replace(&mut *successor, new_finger);
-        }
+        let _ = std::mem::replace(&mut *successor, new_finger);
 
         Ok(Response::new(Empty {}))
     }

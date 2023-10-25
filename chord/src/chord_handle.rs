@@ -10,6 +10,7 @@ use anyhow::Result;
 use rand::random;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{oneshot, Mutex};
 use tonic::transport::{Channel, Server};
 use tonic::{transport, Request};
@@ -34,6 +35,8 @@ impl ChordHandle {
         notifier: Arc<ChordNotifier>,
     ) -> Result<Self> {
         let server_shutdown = Self::start_server(own_id, finger_table, notifier.clone()).await?;
+
+        tokio::time::sleep(Duration::from_secs(1)).await; // give the server some time to start.
         let chord_client = Finger::create_chord_client(IpAddr::V4(Ipv4Addr::LOCALHOST)).await?;
         let handle = ChordHandle {
             own_id,

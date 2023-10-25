@@ -1,40 +1,57 @@
 use anyhow::{anyhow, Result};
 use chord::dht_demo::SimpleChordDHT;
+use rand::Rng;
 use std::error::Error;
 use std::net::IpAddr;
 use std::process::Command;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("Joining the network.");
 
-    let own_ip = retrieve_own_ip()?;
-    println!("own ip: {}", own_ip);
-    let dht_handle = SimpleChordDHT::new_network(own_ip).await?;
+    let dht_handle = if std::env::var("MODE") == Ok("join".to_string()) {
+        let introducer_ip = ip_from_env()?;
+        SimpleChordDHT::join(introducer_ip).await
+    } else {
+        let own_ip = ip_from_env().or(own_ip_from_command())?;
+        SimpleChordDHT::new_network(own_ip).await
+    }?;
 
-    dht_handle.put("A".to_string(), "a".to_string()).await?;
-    dht_handle.put("B".to_string(), "b".to_string()).await?;
-    dht_handle.put("C".to_string(), "c".to_string()).await?;
-    dht_handle.put("D".to_string(), "d".to_string()).await?;
+    for _ in 0..6 {
+        let letter = generate_random_uppercase_letter();
+        println!("Put {}", letter);
+        dht_handle
+            .put(letter.to_string(), letter.to_string().to_ascii_lowercase())
+            .await?;
+    }
 
-    let value = dht_handle.lookup("B").await;
-    println!("The value was: {:?}.", value);
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let value = dht_handle.lookup("D").await;
-    println!("The value was: {:?}.", value);
+    for _ in 0..6 {
+        let letter = generate_random_uppercase_letter();
+        println!(
+            "The lookup for {} was {:?}.",
+            letter,
+            dht_handle.lookup(&letter.to_string()).await
+        );
+    }
 
-    let value = dht_handle.lookup("a").await;
-    println!("The value was: {:?}.", value);
-
-    let value = dht_handle.lookup("Z").await;
-    println!("The value was: {:?}.", value);
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
     println!("Leaving the network.");
     dht_handle.leave().await?;
+    println!("Left");
     Ok(())
 }
 
-fn retrieve_own_ip() -> Result<IpAddr> {
+fn ip_from_env() -> Result<IpAddr> {
+    let env_ip = std::env::var("IP")?;
+    let ip = env_ip.parse()?;
+    Ok(ip)
+}
+
+fn own_ip_from_command() -> Result<IpAddr> {
     let output = Command::new("hostname").arg("-I").output()?.stdout;
     let output_string = String::from_utf8_lossy(&output);
 
@@ -46,4 +63,8 @@ fn retrieve_own_ip() -> Result<IpAddr> {
     let ip = first_ip_str.parse()?;
 
     Ok(ip)
+}
+
+fn generate_random_uppercase_letter() -> char {
+    rand::thread_rng().gen_range(b'A'..b'Z' + 1) as char
 }

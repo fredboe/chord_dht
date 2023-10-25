@@ -1,0 +1,34 @@
+version: '3'
+
+services:
+  introducer:
+      build:
+        context: .
+        dockerfile: Dockerfile
+      environment:
+        - IP=own
+        - MODE=new_network
+      networks:
+        node_network:
+          ipv4_address: 172.28.1.1
+
+  normal-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - IP=172.28.1.1
+      - MODE=join
+    networks:
+      - node_network
+    depends_on:
+      - introducer
+    # deploy:
+    #  replicas: 3
+
+networks:
+  node_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
