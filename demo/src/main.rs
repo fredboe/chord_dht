@@ -37,11 +37,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     println!("Leaving the network.");
     dht_handle.leave().await?;
-    println!("Left");
     Ok(())
 }
 

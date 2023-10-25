@@ -6,7 +6,6 @@ services:
         context: .
         dockerfile: Dockerfile
       environment:
-        - IP=own
         - MODE=new_network
       networks:
         node_network:
