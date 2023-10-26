@@ -3,40 +3,34 @@ use crate::chord_rpc::{Empty, FingerEntry, Identifier, NodeInfo};
 use anyhow::Result;
 use sha1::{Digest, Sha1};
 use std::net::IpAddr;
-use tokio::sync::{Mutex, MutexGuard};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tonic::transport::{Channel, Uri};
 use tonic::{Request, Status};
 
 pub const CHORD_PORT: u16 = 32355;
 
-pub struct Finger {
+pub struct ChordConnection {
     ip: IpAddr,
-    id: u64,
     client: Option<NodeClient<Channel>>,
 }
 
-impl Finger {
-    /// # Explanation
-    /// This function creates a finger without immediatly connecting to the other chord node.
-    /// This is useful if one wants to delay the connection process (e.g. when creating a new chord network).
-    pub fn without_connection(ip: IpAddr, id: u64) -> Self {
-        Finger {
-            ip,
-            id,
-            client: None,
+impl ChordConnection {
+    pub fn new(ip: IpAddr) -> Self {
+        ChordConnection { ip, client: None }
+    }
+
+    pub async fn client(&mut self) -> Result<&mut NodeClient<Channel>, Status> {
+        if self.client.is_none() {
+            let client = Self::create_chord_client(self.ip).await.ok();
+            self.client = client;
         }
+
+        self.client.as_mut().ok_or(Status::unavailable(
+            "Was not able to connect to the chord node.",
+        ))
     }
 
-    /// # Explanation
-    /// This function creates a finger and immediatly tries to connect to the chord node
-    /// (if that does not work then the connection process is delayed).
-    pub async fn connect(ip: IpAddr, id: u64) -> Self {
-        let client = Self::create_chord_client(ip).await.ok();
-        Finger { ip, id, client }
-    }
-
-    /// # Explanation
-    /// This function creates a gRPC client to a chord node.
     pub async fn create_chord_client(ip: IpAddr) -> Result<NodeClient<Channel>> {
         let uri = Uri::builder()
             .scheme("http")
@@ -46,6 +40,31 @@ impl Finger {
         let client = NodeClient::connect(uri).await?;
 
         Ok(client)
+    }
+}
+
+#[derive(Clone)]
+pub struct Finger {
+    ip: IpAddr,
+    id: u64,
+    connection: Arc<Mutex<ChordConnection>>,
+}
+
+impl Finger {
+    /// # Explanation
+    /// This function creates a finger without immediatly connecting to the other chord node.
+    /// This is useful if one wants to delay the connection process (e.g. when creating a new chord network).
+    pub fn without_connection(ip: IpAddr, id: u64) -> Self {
+        let connection = Arc::new(Mutex::new(ChordConnection::new(ip)));
+        Finger { ip, id, connection }
+    }
+
+    /// # Explanation
+    /// This function creates a finger and immediatly tries to connect to the chord node
+    /// (if that does not work then the connection process is delayed).
+    pub async fn connect(ip: IpAddr, id: u64) -> Self {
+        let connection = Arc::new(Mutex::new(ChordConnection::new(ip)));
+        Finger { ip, id, connection }
     }
 
     /// # Explanation
@@ -100,27 +119,11 @@ impl Finger {
         }
     }
 
-    /// # Explanation
-    /// Returns the gRPC client to the chord node the finger is pointing at.
-    /// If no client is given in the struct and the client creation fails then an error is returned.
-    ///
-    /// In the future there might be more retries for the client creation.
-    pub async fn get_client(&mut self) -> Result<&mut NodeClient<Channel>, Status> {
-        if self.client.is_none() {
-            // maybe more retries
-            let client = Self::create_chord_client(self.ip).await.ok();
-            self.client = client;
-        }
-
-        self.client.as_mut().ok_or(Status::unavailable(
-            "Was not able to connect to the chord server.",
-        )) // maybe add ip and id in the error here
-    }
-
     /// # Explantion
     /// This function performs a find_successor-request on the client.
     pub async fn find_successor(&mut self, id: u64) -> Result<NodeInfo, Status> {
-        let client = self.get_client().await?;
+        let mut connection = self.connection.lock().await;
+        let client = connection.client().await?;
         let response = client
             .find_successor(Request::new(Identifier { id }))
             .await?;
@@ -130,7 +133,8 @@ impl Finger {
     /// # Explantion
     /// This function performs a find_predecessor-request on the client.
     pub async fn find_predecessor(&mut self, id: u64) -> Result<NodeInfo, Status> {
-        let client = self.get_client().await?;
+        let mut connection = self.connection.lock().await;
+        let client = connection.client().await?;
         let response = client
             .find_predecessor(Request::new(Identifier { id }))
             .await?;
@@ -140,7 +144,8 @@ impl Finger {
     /// # Explantion
     /// This function performs a successor-request on the client.
     pub async fn successor(&mut self) -> Result<NodeInfo, Status> {
-        let client = self.get_client().await?;
+        let mut connection = self.connection.lock().await;
+        let client = connection.client().await?;
         let response = client.successor(Request::new(Empty {})).await?;
         Ok(response.into_inner())
     }
@@ -148,7 +153,8 @@ impl Finger {
     /// # Explantion
     /// This function performs a predecessor-request on the client.
     pub async fn predecessor(&mut self) -> Result<NodeInfo, Status> {
-        let client = self.get_client().await?;
+        let mut connection = self.connection.lock().await;
+        let client = connection.client().await?;
         let response = client.predecessor(Request::new(Empty {})).await?;
         Ok(response.into_inner())
     }
@@ -158,7 +164,8 @@ impl Finger {
     ///
     /// If the given ip is None then the chord node will use the remote ip of the request.
     pub async fn update_predecessor(&mut self, ip: Option<IpAddr>, id: u64) -> Result<(), Status> {
-        let client = self.get_client().await?;
+        let mut connection = self.connection.lock().await;
+        let client = connection.client().await?;
         let _ = client
             .update_predecessor(Request::new(FingerEntry {
                 index: 0,
@@ -179,7 +186,8 @@ impl Finger {
         ip: Option<IpAddr>,
         id: u64,
     ) -> Result<(), Status> {
-        let client = self.get_client().await?;
+        let mut connection = self.connection.lock().await;
+        let client = connection.client().await?;
         let _ = client
             .update_finger_table(Request::new(FingerEntry {
                 index,
@@ -192,24 +200,26 @@ impl Finger {
 }
 
 pub struct FingerTable {
-    successor: Mutex<Finger>,
-    predecessor: Mutex<Finger>,
+    predecessor: Mutex<Option<Finger>>,
+    table: Vec<Mutex<Option<Finger>>>,
 }
 
 impl FingerTable {
-    pub fn new(successor: Mutex<Finger>, predecessor: Mutex<Finger>) -> Self {
-        FingerTable {
-            successor,
-            predecessor,
-        }
+    pub fn new(successor: Mutex<Option<Finger>>, predecessor: Mutex<Option<Finger>>) -> Self {
+        let mut table: Vec<Mutex<Option<Finger>>> = std::iter::repeat_with(|| Mutex::new(None))
+            .take(64)
+            .collect();
+        table[0] = successor;
+
+        FingerTable { predecessor, table }
     }
 
     pub async fn from_info(successor_info: NodeInfo, predecessor_info: NodeInfo) -> Result<Self> {
         let successor = Finger::from_info(successor_info).await?;
         let predecessor = Finger::from_info(predecessor_info).await?;
         Ok(FingerTable::new(
-            Mutex::new(successor),
-            Mutex::new(predecessor),
+            Mutex::new(Some(successor)),
+            Mutex::new(Some(predecessor)),
         ))
     }
 
@@ -221,27 +231,41 @@ impl FingerTable {
         let predecessor =
             Finger::without_connection(predecessor_info.ip.parse()?, predecessor_info.id);
         Ok(FingerTable::new(
-            Mutex::new(successor),
-            Mutex::new(predecessor),
+            Mutex::new(Some(successor)),
+            Mutex::new(Some(predecessor)),
         ))
+    }
+
+    pub async fn update_successor(&self, successor: Finger) {
+        self.update_finger(0, successor).await
     }
 
     /// # Returns
     /// Returns a mutex guard of the successor finger.
-    pub async fn get_successor(&self) -> MutexGuard<'_, Finger> {
-        self.get(0).await
+    pub async fn successor(&self) -> Option<Finger> {
+        self.get_finger(0).await
+    }
+
+    pub async fn update_predecessor(&self, predecessor: Finger) {
+        let mut old_predecessor = self.predecessor.lock().await;
+        let _ = std::mem::replace(&mut *old_predecessor, Some(predecessor));
     }
 
     /// # Returns
     /// Returns a mutex guard of the predecessor finger.
-    pub async fn get_predecessor(&self) -> MutexGuard<'_, Finger> {
-        self.predecessor.lock().await
+    pub async fn predecessor(&self) -> Option<Finger> {
+        self.predecessor.lock().await.clone()
+    }
+
+    pub async fn update_finger(&self, i: usize, finger: Finger) {
+        let mut old_finger = self.table[i].lock().await;
+        let _ = std::mem::replace(&mut *old_finger, Some(finger));
     }
 
     /// # Returns
     /// Returns a mutex guard of the ith finger (i is not used currently).
-    pub async fn get(&self, _i: u8) -> MutexGuard<'_, Finger> {
-        self.successor.lock().await // later with index
+    pub async fn get_finger(&self, i: usize) -> Option<Finger> {
+        self.table[i].lock().await.clone()
     }
 }
 

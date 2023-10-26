@@ -19,6 +19,7 @@ RUN rm -rf demo/src/*
 COPY ./chord/src ./chord/src
 COPY ./demo/src ./demo/src
 
+# Touch so that docker recognizes that something has changed
 RUN touch chord/src/lib.rs
 RUN touch demo/src/main.rs
 RUN cargo build --release --manifest-path ./demo/Cargo.toml

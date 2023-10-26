@@ -2,11 +2,11 @@ use crate::chord_node::ChordNode;
 use crate::chord_rpc::node_client::NodeClient;
 use crate::chord_rpc::node_server::NodeServer;
 use crate::chord_rpc::{Empty, Identifier, NodeInfo};
-use crate::finger_table::{compute_chord_id, Finger, FingerTable, CHORD_PORT};
+use crate::finger_table::{compute_chord_id, ChordConnection, Finger, FingerTable, CHORD_PORT};
 use crate::notification::chord_notification::{
     ChordNotification, ChordNotifier, TransferNotification,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use rand::random;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -37,7 +37,8 @@ impl ChordHandle {
         let server_shutdown = Self::start_server(own_id, finger_table, notifier.clone()).await?;
 
         tokio::time::sleep(Duration::from_secs(1)).await; // give the server some time to start.
-        let chord_client = Finger::create_chord_client(IpAddr::V4(Ipv4Addr::LOCALHOST)).await?;
+        let chord_client =
+            ChordConnection::create_chord_client(IpAddr::V4(Ipv4Addr::LOCALHOST)).await?;
         let handle = ChordHandle {
             own_id,
             chord_client: Mutex::new(chord_client),
@@ -71,9 +72,15 @@ impl ChordHandle {
 
         notifier
             .notify(ChordNotification::DataFrom(
-                TransferNotification::allow_all(finger_table.get_successor().await.ip()),
+                TransferNotification::allow_all(
+                    finger_table
+                        .successor()
+                        .await
+                        .ok_or(anyhow!("There existis no successor."))?
+                        .ip(),
+                ),
             ))
-            .await;
+            .await; // this should belong to stabilize later
 
         let handle = Self::new_with_finger_table(own_id, finger_table, notifier).await?;
         handle.update_others_join().await?;

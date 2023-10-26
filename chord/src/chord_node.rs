@@ -8,6 +8,8 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 const COULD_NOT_CREATE_FINGER: &str = "Was not able to create a finger from the given ip.";
+const SUCCESSOR_NOT_FOUND: &str = "Successor was not found.";
+const PREDECESSOR_NOT_FOUND: &str = "Predecessor was not found.";
 
 pub struct ChordNode {
     own_id: u64,
@@ -44,7 +46,11 @@ impl Node for ChordNode {
         &self,
         request: Request<Identifier>,
     ) -> Result<Response<NodeInfo>, Status> {
-        let mut successor = self.finger_table.get_successor().await;
+        let mut successor = self
+            .finger_table
+            .successor()
+            .await
+            .ok_or(Status::unavailable(SUCCESSOR_NOT_FOUND))?;
         let requested_id = request.into_inner().id;
         if in_store_interval(requested_id, self.own_id, successor.id()) {
             Ok(Response::new(NodeInfo {
@@ -69,7 +75,11 @@ impl Node for ChordNode {
         &self,
         request: Request<Identifier>,
     ) -> Result<Response<NodeInfo>, Status> {
-        let mut predecessor = self.finger_table.get_predecessor().await;
+        let mut predecessor = self
+            .finger_table
+            .predecessor()
+            .await
+            .ok_or(Status::unavailable(PREDECESSOR_NOT_FOUND))?;
         let requested_id = request.into_inner().id;
         if in_store_interval(requested_id, predecessor.id(), self.own_id) {
             Ok(Response::new(NodeInfo {
@@ -87,7 +97,11 @@ impl Node for ChordNode {
     /// # Explanation
     /// The function returns the successor of this chord node. It returns the successor's ip and its id.
     async fn successor(&self, _: Request<Empty>) -> Result<Response<NodeInfo>, Status> {
-        let successor = self.finger_table.get_successor().await;
+        let successor = self
+            .finger_table
+            .successor()
+            .await
+            .ok_or(Status::unavailable(SUCCESSOR_NOT_FOUND))?;
         Ok(Response::new(NodeInfo {
             ip: successor.ip().to_string(),
             id: successor.id(),
@@ -97,7 +111,11 @@ impl Node for ChordNode {
     /// # Explanation
     /// The function returns the predecessor of this chord node. It returns the predecessor's ip and its id.
     async fn predecessor(&self, _: Request<Empty>) -> Result<Response<NodeInfo>, Status> {
-        let predecessor = self.finger_table.get_predecessor().await;
+        let predecessor = self
+            .finger_table
+            .predecessor()
+            .await
+            .ok_or(Status::unavailable(PREDECESSOR_NOT_FOUND))?;
         Ok(Response::new(NodeInfo {
             ip: predecessor.ip().to_string(),
             id: predecessor.id(),
@@ -116,7 +134,11 @@ impl Node for ChordNode {
         let new_finger = Finger::from_entry_request(request)
             .await
             .map_err(|_| Status::not_found(COULD_NOT_CREATE_FINGER))?;
-        let mut predecessor = self.finger_table.get_predecessor().await;
+        let predecessor = self
+            .finger_table
+            .predecessor()
+            .await
+            .ok_or(Status::unavailable(PREDECESSOR_NOT_FOUND))?;
 
         // notify the data storage
         if in_ring_interval_exclusive(new_finger.id(), predecessor.id(), self.own_id) {
@@ -139,7 +161,7 @@ impl Node for ChordNode {
                 .await;
         }
 
-        let _ = std::mem::replace(&mut *predecessor, new_finger);
+        self.finger_table.update_predecessor(new_finger).await;
 
         Ok(Response::new(Empty {}))
     }
@@ -158,8 +180,8 @@ impl Node for ChordNode {
         let new_finger = Finger::from_entry_request(request)
             .await
             .map_err(|_| Status::not_found(COULD_NOT_CREATE_FINGER))?;
-        let mut successor = self.finger_table.get_successor().await;
-        let _ = std::mem::replace(&mut *successor, new_finger);
+
+        self.finger_table.update_successor(new_finger).await;
 
         Ok(Response::new(Empty {}))
     }
