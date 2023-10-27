@@ -159,7 +159,7 @@ impl ChordNode {
             .update_predecessor(Some(new_predecessor.clone()))
             .await;
 
-        // notify the data layer
+        // notify the data layer - maybe add here DataFrom aswell for leaving (or maybe range update)
         self.notifier
             .notify(ChordNotification::DataTo(TransferNotification::from_range(
                 new_predecessor.ip(),

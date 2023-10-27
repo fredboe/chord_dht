@@ -8,6 +8,9 @@ RUN cargo new demo
 COPY ./chord/proto ./chord/proto
 COPY ./chord/build.rs ./chord/build.rs
 COPY ./chord/Cargo.toml ./chord/Cargo.toml
+
+COPY ./demo/proto ./demo/proto
+COPY ./demo/build.rs ./demo/build.rs
 COPY ./demo/Cargo.toml ./demo/Cargo.toml
 
 RUN echo "fn main() {}" > ./demo/src/main.rs

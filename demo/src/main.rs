@@ -1,12 +1,19 @@
+mod storage_rpc {
+    tonic::include_proto!("storage");
+}
+
+mod dht_demo;
+mod storage;
+
+use crate::dht_demo::SimpleChordDHT;
 use anyhow::{anyhow, Result};
-use chord::dht_demo::SimpleChordDHT;
 use rand::Rng;
 use std::error::Error;
 use std::net::IpAddr;
 use std::process::Command;
 use std::time::Duration;
 
-// change the chord events
+// change the chord events (maybe range)
 // r successor list
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,7 +27,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         SimpleChordDHT::new_network(own_ip).await
     }?;
 
-    for _ in 0..6 {
+    for _ in 0..2 {
         let letter = generate_random_uppercase_letter();
         println!("Put {}", letter);
         dht_handle
@@ -28,9 +35,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await?;
     }
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
-    for _ in 0..6 {
+    for _ in 0..2 {
         let letter = generate_random_uppercase_letter();
         println!(
             "The lookup for {} was {:?}.",
@@ -39,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     println!("Leaving the network.");
     dht_handle.leave().await?;

@@ -1,12 +1,12 @@
-use crate::notification::chord_notification::{
-    ChordCharacteristic, ChordNotification, ChordNotifier, TransferNotification,
-};
-use crate::notification::notifier::Subscription;
 use crate::storage_rpc::data_storage_client::DataStorageClient;
 use crate::storage_rpc::data_storage_server::DataStorage;
 use crate::storage_rpc::data_storage_server::DataStorageServer;
 use crate::storage_rpc::{Empty, Key, KeyValue, KeyValues, OptionalValue, Value};
 use anyhow::Result;
+use chord::notification::chord_notification::{
+    ChordCharacteristic, ChordNotification, ChordNotifier, TransferNotification,
+};
+use chord::notification::notifier::Subscription;
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -29,7 +29,7 @@ pub const DATA_PORT: u16 = 43355;
 ///
 /// The transfer_out process subscribes to the DataTo characteristic and thus is notified by the chord
 /// layer of any key transfers out of this node. The transfer_out process then performs this key transfers.
-pub(crate) struct SimpleDataHandle {
+pub struct SimpleDataHandle {
     shutdown_server: oneshot::Sender<()>,
     transfer_out_handle: JoinHandle<()>,
 }
@@ -161,7 +161,7 @@ impl SimpleDataHandle {
 
 /// # Explanation
 /// This is a simple data server that uses a hash map as the storage.
-pub(crate) struct SimpleStorage {
+pub struct SimpleStorage {
     storage: Arc<Mutex<HashMap<String, String>>>,
 }
 

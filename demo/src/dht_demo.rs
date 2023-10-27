@@ -1,8 +1,8 @@
-use crate::chord_handle::ChordHandle;
-use crate::notification::chord_notification::ChordNotifier;
 use crate::storage::data_demo::SimpleDataHandle;
 use crate::storage_rpc::{Key, KeyValue};
 use anyhow::{anyhow, Result};
+use chord::chord_handle::ChordHandle;
+use chord::notification::chord_notification::ChordNotifier;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tonic::Request;

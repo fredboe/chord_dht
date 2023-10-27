@@ -23,7 +23,7 @@ impl ChordStabilizer {
             .finger_table
             .successor()
             .await
-            .ok_or(anyhow!("There is no successor."))?;
+            .ok_or(anyhow!("There is no successor in the finger table."))?;
 
         if let Ok(x) = successor.predecessor().await {
             if in_ring_interval_exclusive(x.id, self.own_id, successor.id()) {
@@ -31,16 +31,15 @@ impl ChordStabilizer {
                 // verify that it is an actual node
                 if maybe_new_successor.check().await {
                     successor = maybe_new_successor;
+
+                    self.finger_table
+                        .update_successor(Some(successor.clone()))
+                        .await;
                 }
             }
         }
 
-        self.finger_table
-            .update_successor(Some(successor.clone()))
-            .await;
-
         successor.notify(self.own_id).await?;
-        // notify data layer
 
         Ok(())
     }

@@ -218,8 +218,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chord",
+ "futures",
+ "prost",
  "rand",
  "tokio",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
