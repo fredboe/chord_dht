@@ -11,8 +11,10 @@ use futures::StreamExt;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
+use tokio::time::timeout;
 use tonic::transport::Server;
 use tonic::transport::{Channel, Uri};
 use tonic::{Request, Response, Status};
@@ -38,7 +40,7 @@ impl SimpleDataHandle {
     pub async fn start(notifier: Arc<ChordNotifier>) -> Result<Self> {
         // the storage needs to be shared between the server and the transfer_out process
         let storage = Arc::new(Mutex::new(HashMap::new()));
-        let shutdown_server = Self::start_server(notifier.clone(), storage.clone()).await?;
+        let shutdown_server = Self::start_server(storage.clone()).await?;
         let transfer_out_handle = Self::start_transfer_out_task(notifier, storage).await;
         Ok(SimpleDataHandle {
             shutdown_server,
@@ -49,10 +51,9 @@ impl SimpleDataHandle {
     /// # Explanation
     /// Starts the actual data server.
     async fn start_server(
-        notifier: Arc<ChordNotifier>,
         storage: Arc<Mutex<HashMap<String, String>>>,
     ) -> Result<oneshot::Sender<()>> {
-        let storage_service = SimpleStorage::new(notifier.clone(), storage.clone());
+        let storage_service = SimpleStorage::new(storage.clone());
         let (shudown_sender, shutdown_receiver) = oneshot::channel();
         tokio::task::spawn(async move {
             Server::builder()
@@ -113,19 +114,22 @@ impl SimpleDataHandle {
         let transfer_ip = transfer_notification.ip;
         let mut data_client = Self::create_data_client(transfer_ip).await?;
 
-        let mut storage = storage.lock().await;
-        let mut out = vec![];
-        storage.retain(|key, value| {
-            if transfer_notification.should_transfer(&key) {
-                out.push(KeyValue {
-                    key: key.clone(),
-                    value: value.clone(),
-                });
-                false
-            } else {
-                true
-            }
-        });
+        let out = {
+            let mut storage = storage.lock().await;
+            let mut out = vec![];
+            storage.retain(|key, value| {
+                if transfer_notification.should_transfer(&key) {
+                    out.push(KeyValue {
+                        key: key.clone(),
+                        value: value.clone(),
+                    });
+                    false
+                } else {
+                    true
+                }
+            });
+            out
+        };
 
         data_client
             .transfer_data(Request::new(KeyValues { key_values: out }))
@@ -148,7 +152,8 @@ impl SimpleDataHandle {
             .authority(format!("{}:{}", addr, DATA_PORT))
             .path_and_query("/")
             .build()?;
-        let data_client = DataStorageClient::connect(uri).await?;
+        let data_client =
+            timeout(Duration::from_secs(1), DataStorageClient::connect(uri)).await??;
 
         Ok(data_client)
     }
@@ -158,12 +163,11 @@ impl SimpleDataHandle {
 /// This is a simple data server that uses a hash map as the storage.
 pub(crate) struct SimpleStorage {
     storage: Arc<Mutex<HashMap<String, String>>>,
-    notifier: Arc<ChordNotifier>,
 }
 
 impl SimpleStorage {
-    pub fn new(notifier: Arc<ChordNotifier>, storage: Arc<Mutex<HashMap<String, String>>>) -> Self {
-        SimpleStorage { storage, notifier }
+    pub fn new(storage: Arc<Mutex<HashMap<String, String>>>) -> Self {
+        SimpleStorage { storage }
     }
 }
 
@@ -191,33 +195,16 @@ impl DataStorage for SimpleStorage {
     /// This function checks with the notifier if the transfer of keys into this node is allowed.
     /// And then it extends the current storage with all the keys in the request.
     async fn transfer_data(&self, request: Request<KeyValues>) -> Result<Response<Empty>, Status> {
-        const NO_REMOTE_IP: &str = "Was not able to extract the remote ip out of the request.";
-        const NO_ACCESS_GRANTED: &str = "The access to transfer data was not granted.";
+        // maybe filter all the allowed keys here
+        let mut storage = self.storage.lock().await;
+        storage.extend(
+            request
+                .into_inner()
+                .key_values
+                .into_iter()
+                .map(|KeyValue { key, value }| (key, value)),
+        );
 
-        let remote_ip = request
-            .remote_addr()
-            .ok_or(Status::unavailable(NO_REMOTE_IP))?
-            .ip();
-        if self
-            .notifier
-            .has_and_remove(&ChordNotification::DataFrom(
-                TransferNotification::allow_all(remote_ip),
-            ))
-            .await
-        {
-            // maybe filter all the allowed keys here
-            let mut storage = self.storage.lock().await;
-            storage.extend(
-                request
-                    .into_inner()
-                    .key_values
-                    .into_iter()
-                    .map(|KeyValue { key, value }| (key, value)),
-            );
-
-            Ok(Response::new(Empty {}))
-        } else {
-            Err(Status::unavailable(NO_ACCESS_GRANTED))
-        }
+        Ok(Response::new(Empty {}))
     }
 }

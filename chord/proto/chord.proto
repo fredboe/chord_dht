@@ -11,8 +11,7 @@ service Node {
   rpc successor (Empty) returns (NodeInfo);
   rpc predecessor (Empty) returns (NodeInfo);
 
-  rpc update_predecessor (FingerEntry) returns (Empty);
-  rpc update_finger_table (FingerEntry) returns (Empty);
+  rpc notify (Identifier) returns (Empty);
 }
 
 message Empty {}
@@ -24,10 +23,4 @@ message NodeInfo {
 
 message Identifier {
   uint64 id = 1;
-}
-
-message FingerEntry {
-  uint32 index = 1;
-  string ip = 2;
-  uint64 id = 3;
 }

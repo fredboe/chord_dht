@@ -1,5 +1,5 @@
 use crate::chord_rpc::node_server::Node;
-use crate::chord_rpc::{Empty, FingerEntry, Identifier, NodeInfo};
+use crate::chord_rpc::{Empty, Identifier, NodeInfo};
 use crate::finger_table::{in_ring_interval_exclusive, in_store_interval, Finger, FingerTable};
 use crate::notification::chord_notification::{
     ChordNotification, ChordNotifier, TransferNotification,
@@ -13,12 +13,12 @@ const PREDECESSOR_NOT_FOUND: &str = "Predecessor was not found.";
 
 pub struct ChordNode {
     own_id: u64,
-    finger_table: FingerTable,
+    finger_table: Arc<FingerTable>,
     notifier: Arc<ChordNotifier>,
 }
 
 impl ChordNode {
-    pub fn new(own_id: u64, finger_table: FingerTable, notifier: Arc<ChordNotifier>) -> Self {
+    pub fn new(own_id: u64, finger_table: Arc<FingerTable>, notifier: Arc<ChordNotifier>) -> Self {
         ChordNode {
             own_id,
             finger_table,
@@ -46,11 +46,11 @@ impl Node for ChordNode {
         &self,
         request: Request<Identifier>,
     ) -> Result<Response<NodeInfo>, Status> {
-        let mut successor = self
+        let successor = self
             .finger_table
             .successor()
             .await
-            .ok_or(Status::unavailable(SUCCESSOR_NOT_FOUND))?;
+            .ok_or(Status::aborted(SUCCESSOR_NOT_FOUND))?;
         let requested_id = request.into_inner().id;
         if in_store_interval(requested_id, self.own_id, successor.id()) {
             Ok(Response::new(NodeInfo {
@@ -75,11 +75,11 @@ impl Node for ChordNode {
         &self,
         request: Request<Identifier>,
     ) -> Result<Response<NodeInfo>, Status> {
-        let mut predecessor = self
+        let predecessor = self
             .finger_table
             .predecessor()
             .await
-            .ok_or(Status::unavailable(PREDECESSOR_NOT_FOUND))?;
+            .ok_or(Status::aborted(PREDECESSOR_NOT_FOUND))?;
         let requested_id = request.into_inner().id;
         if in_store_interval(requested_id, predecessor.id(), self.own_id) {
             Ok(Response::new(NodeInfo {
@@ -101,7 +101,7 @@ impl Node for ChordNode {
             .finger_table
             .successor()
             .await
-            .ok_or(Status::unavailable(SUCCESSOR_NOT_FOUND))?;
+            .ok_or(Status::aborted(SUCCESSOR_NOT_FOUND))?;
         Ok(Response::new(NodeInfo {
             ip: successor.ip().to_string(),
             id: successor.id(),
@@ -115,74 +115,57 @@ impl Node for ChordNode {
             .finger_table
             .predecessor()
             .await
-            .ok_or(Status::unavailable(PREDECESSOR_NOT_FOUND))?;
+            .ok_or(Status::aborted(PREDECESSOR_NOT_FOUND))?;
         Ok(Response::new(NodeInfo {
             ip: predecessor.ip().to_string(),
             id: predecessor.id(),
         }))
     }
 
-    /// # Explanation
-    /// This function updates the predecessor of this node. It also notifies the data layer that a key transfer
-    /// needs to happen.
-    ///
-    /// If the ip in the request is "" then the remote ip will be used.
-    async fn update_predecessor(
-        &self,
-        request: Request<FingerEntry>,
-    ) -> Result<Response<Empty>, Status> {
-        let new_finger = Finger::from_entry_request(request)
-            .await
-            .map_err(|_| Status::not_found(COULD_NOT_CREATE_FINGER))?;
-        let predecessor = self
-            .finger_table
-            .predecessor()
-            .await
-            .ok_or(Status::unavailable(PREDECESSOR_NOT_FOUND))?;
+    async fn notify(&self, request: Request<Identifier>) -> Result<Response<Empty>, Status> {
+        let ip = request
+            .remote_addr()
+            .ok_or(Status::aborted(COULD_NOT_CREATE_FINGER))?
+            .ip();
+        let id = request.into_inner().id;
 
-        // notify the data storage
-        if in_ring_interval_exclusive(new_finger.id(), predecessor.id(), self.own_id) {
-            self.notifier
-                .notify(ChordNotification::DataTo(TransferNotification::from_range(
-                    new_finger.ip(),
-                    predecessor.id(),
-                    new_finger.id(),
-                )))
-                .await;
-        } else {
-            self.notifier
-                .notify(ChordNotification::DataFrom(
-                    TransferNotification::from_range(
-                        predecessor.ip(),
-                        new_finger.id(),
-                        predecessor.id(),
-                    ),
-                ))
-                .await;
+        let maybe_new_predecessor = Finger::new(ip, id);
+        let optional_predecessor = self.finger_table.predecessor().await;
+
+        match optional_predecessor {
+            Some(predecssor) if in_ring_interval_exclusive(id, predecssor.id(), self.own_id) => {
+                self.update_predecessor_and_notify(maybe_new_predecessor, predecssor.id(), id)
+                    .await;
+            }
+            None => {
+                self.update_predecessor_and_notify(maybe_new_predecessor, self.own_id, id)
+                    .await;
+            }
+            _ => {}
         }
-
-        self.finger_table.update_predecessor(new_finger).await;
 
         Ok(Response::new(Empty {}))
     }
+}
 
-    /// # Explanation
-    /// This function updates the finger table of this chord node. It expects an index i (currently not used) and the
-    /// information of the new node (ip and id).
-    /// It then updates the finger table if the new node really is the ith finger (meaning the new node falls in the interval
-    /// [own_id+2^i, current_finger)).
-    ///
-    /// If the ip in the request is "" then the remote ip will be used.
-    async fn update_finger_table(
+impl ChordNode {
+    async fn update_predecessor_and_notify(
         &self,
-        request: Request<FingerEntry>,
-    ) -> Result<Response<Empty>, Status> {
-        let new_finger = Finger::from_entry_request(request)
-            .await
-            .map_err(|_| Status::not_found(COULD_NOT_CREATE_FINGER))?;
+        new_predecessor: Finger,
+        left_id: u64,
+        right_id: u64,
+    ) {
+        self.finger_table
+            .update_predecessor(Some(new_predecessor.clone()))
+            .await;
 
-        self.finger_table.update_successor(new_finger).await;
-
-        Ok(Response::new(Empty {}))
+        // notify the data layer
+        self.notifier
+            .notify(ChordNotification::DataTo(TransferNotification::from_range(
+                new_predecessor.ip(),
+                left_id,
+                right_id,
+            )))
+            .await;
     }
 }

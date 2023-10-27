@@ -6,6 +6,8 @@ use std::net::IpAddr;
 use std::process::Command;
 use std::time::Duration;
 
+// change the chord events
+// r successor list
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("Joining the network.");
@@ -26,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await?;
     }
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
     for _ in 0..6 {
         let letter = generate_random_uppercase_letter();
