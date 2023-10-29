@@ -101,6 +101,10 @@ impl ChordHandle {
         server_shutdown_sender
     }
 
+    /// # Explanation
+    /// This function starts the stabilize process that periodically notifies
+    /// the successor of this node's existence and also updates the fingers in the finger table.
+    /// This function returns a channel that can be used to shutdown the process.
     fn start_stabilize_process(finger_table: Arc<FingerTable>) -> oneshot::Sender<()> {
         let (stabilize_shutdown, mut stabilize_shutdown_receiver) = oneshot::channel();
         let stabilizer = ChordStabilizer::new(finger_table);
@@ -144,6 +148,8 @@ impl ChordHandle {
         Ok(())
     }
 
+    /// # Explantion
+    /// This function notifies the successor and the predecessor that this node wants to leave.
     async fn update_others_leave(&self) -> Result<()> {
         let successor = self.create_successor_client().await?;
         log::trace!("While leaving the successor was {:?}.", successor.info());

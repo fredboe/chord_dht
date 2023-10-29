@@ -40,6 +40,8 @@ impl Node for ChordNode {
         }))
     }
 
+    /// # Explanation
+    /// This function searches for the closest finger (in this finger table) that precedes the given id.
     async fn closest_preceding_finger(
         &self,
         request: Request<Identifier>,
@@ -75,11 +77,8 @@ impl Node for ChordNode {
     }
 
     /// # Explanation
-    /// This function returns the successor node of the in the request given identifier. It works by checking if
-    /// the successor of this node is the successor of the identifier and if not it forwards the request to the successor.
-    /// By that we move clockwise on the chord ring until we find the successor.
-    ///
-    /// This function will be improved with an improved finger table to be in O(log n).
+    /// This function returns the successor node of the in the request given identifier. It works by
+    /// calling closest_preceding_finger until it finds the node that is supposed to store the given id.
     async fn find_successor(
         &self,
         request: Request<Identifier>,
@@ -138,6 +137,12 @@ impl Node for ChordNode {
         Ok(Response::new(predecessor.info()))
     }
 
+    /// # Explanation
+    /// The notify function should be called by all the nodes that believe that they are the new
+    /// predecessor of this node.
+    ///
+    /// Currently it only works on joins. This might change when each node stores a successor list
+    /// (instead of just one successor).
     async fn notify(&self, request: Request<Identifier>) -> Result<Response<Empty>, Status> {
         let ip = request
             .remote_addr()
@@ -173,6 +178,11 @@ impl Node for ChordNode {
         Ok(Response::new(Empty {}))
     }
 
+    /// # Explantion
+    /// The notify_leave function should be called by the nodes that want to leave and
+    /// either are the successor or predecessor of this node.
+    ///
+    /// This function might be removed when a successor list is used.
     async fn notify_leave(&self, request: Request<NodeInfo>) -> Result<Response<Empty>, Status> {
         let remote_ip = request
             .remote_addr()

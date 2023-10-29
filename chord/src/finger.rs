@@ -13,6 +13,13 @@ use tonic::{Request, Status};
 
 pub const CHORD_PORT: u16 = 32355;
 
+/// This struct represents a chord connection. It is mainly used as a helping struct in the ChordConnectionPool struct.
+///
+/// It contains of a chord client as well as a sender which sends the client back to the connection pool
+/// once this struct gets dropped.
+///
+/// Please only use the new function for creation and do not modify any of the fields because
+/// if the client field is None and the objects deref function is called then the whole program panics.
 pub struct ChordConnection {
     send_back: mpsc::Sender<NodeClient<Channel>>,
     client: Option<NodeClient<Channel>>,
@@ -26,6 +33,8 @@ impl ChordConnection {
         }
     }
 
+    /// # Explanation
+    /// This function creates a client to a chord node.
     pub async fn create_chord_client(ip: IpAddr) -> Result<NodeClient<Channel>> {
         let uri = Uri::builder()
             .scheme("http")
@@ -55,6 +64,7 @@ impl DerefMut for ChordConnection {
 impl Drop for ChordConnection {
     fn drop(&mut self) {
         if let Some(client) = self.client.take() {
+            // send the client back to the connection pool
             let send_back = self.send_back.clone();
             tokio::task::spawn(async move {
                 send_back.send(client).await.ok();
@@ -63,32 +73,41 @@ impl Drop for ChordConnection {
     }
 }
 
+/// # Explanation
+/// The ChordConnectionPool is a struct that creates new connections/clients to the specified Chord node only on demand.
+/// Each connection is returned to the pool once it is no longer in use.
 #[derive(Clone)]
-pub struct ConnectionPool {
+pub struct ChordConnectionPool {
     ip: IpAddr,
     send_back: mpsc::Sender<NodeClient<Channel>>,
     queue: Arc<Mutex<VecDeque<NodeClient<Channel>>>>,
 }
 
-impl ConnectionPool {
+impl ChordConnectionPool {
     pub fn new(ip: IpAddr) -> Self {
         let queue = Arc::new(Mutex::new(VecDeque::new()));
         let (send_back, mut back_receiver) = mpsc::channel(32);
 
         let queue_clone = queue.clone();
         tokio::task::spawn(async move {
+            // wait for clients that are sent back and add these back to the pool
             while let Some(client) = back_receiver.recv().await {
-                queue_clone.lock().await.push_back(client);
+                let mut queue_lock = queue_clone.lock().await;
+                if queue_lock.len() < 10 {
+                    queue_lock.push_back(client);
+                }
             }
         });
 
-        ConnectionPool {
+        ChordConnectionPool {
             ip,
             send_back,
             queue,
         }
     }
 
+    /// # Explanation
+    /// This function either pops one connection from the pool or creates a new one.
     pub async fn get_connection(&self) -> Result<ChordConnection, Status> {
         let optional_client = {
             let mut queue = self.queue.lock().await;
@@ -111,12 +130,12 @@ impl ConnectionPool {
 pub struct Finger {
     ip: IpAddr,
     id: u64,
-    pool: ConnectionPool,
+    pool: ChordConnectionPool,
 }
 
 impl Finger {
     pub fn new(ip: IpAddr, id: u64) -> Self {
-        let pool = ConnectionPool::new(ip);
+        let pool = ChordConnectionPool::new(ip);
         Finger { ip, id, pool }
     }
 
@@ -153,6 +172,8 @@ impl Finger {
         }
     }
 
+    /// # Explanation
+    /// This function checks if the node still exists and if the correct id is returned.
     pub async fn check(&self) -> bool {
         let connection = self.pool.get_connection().await;
         if let Ok(mut connection) = connection {
@@ -163,6 +184,8 @@ impl Finger {
         }
     }
 
+    /// # Explanation
+    /// This function sends a closest_preceding_finger-request to the node.
     pub async fn closest_preceding_finger(&self, id: u64) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
         let response = connection
@@ -172,7 +195,7 @@ impl Finger {
     }
 
     /// # Explantion
-    /// This function performs a find_successor-request on the client.
+    /// This function sends a find_successor-request to the node.
     pub async fn find_successor(&self, id: u64) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
         let response = connection
@@ -182,7 +205,7 @@ impl Finger {
     }
 
     /// # Explantion
-    /// This function performs a successor-request on the client.
+    /// This function sends a successor-request to the node.
     pub async fn successor(&self) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
         let response = connection.successor(Request::new(Empty {})).await?;
@@ -190,13 +213,15 @@ impl Finger {
     }
 
     /// # Explantion
-    /// This function performs a predecessor-request on the client.
+    /// This function sends a predecessor-request to the node.
     pub async fn predecessor(&self) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
         let response = connection.predecessor(Request::new(Empty {})).await?;
         Ok(response.into_inner())
     }
 
+    /// # Explanation
+    /// This function sends a notify-request to the node.
     pub async fn notify(&self, own_id: u64) -> Result<(), Status> {
         let mut connection = self.pool.get_connection().await?;
         let _ = connection
@@ -205,6 +230,8 @@ impl Finger {
         Ok(())
     }
 
+    /// # Explanation
+    /// This function sends a notify_leave-request to the node.
     pub async fn notify_leave(&self, info: NodeInfo) -> Result<(), Status> {
         let mut connection = self.pool.get_connection().await?;
         let _ = connection.notify_leave(Request::new(info)).await?;

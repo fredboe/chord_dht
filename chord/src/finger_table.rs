@@ -24,6 +24,9 @@ impl FingerTable {
         }
     }
 
+    /// # Explanation
+    /// This function creates a finger table for the first node in a new network.
+    /// (The successor is set to this.)
     pub fn for_new_network(own_ip: IpAddr) -> Self {
         let own_id = random();
         log::trace!("The own id is {}.", own_id);
@@ -32,6 +35,9 @@ impl FingerTable {
         Self::from_successor(own_id, own_finger)
     }
 
+    /// # Explanation
+    /// This function creates a finger table from an introducing node in the network this node should join.
+    /// The id of this node is randomly select.
     pub async fn from_introducer(introducer_addr: IpAddr) -> Result<Self> {
         let own_id = random();
         log::trace!("The own id is {}.", own_id);
@@ -60,32 +66,14 @@ impl FingerTable {
         FingerTable::new(own_id, predecessor, table)
     }
 
+    /// # Explanation
+    /// This function returns this node's id.
     pub fn own_id(&self) -> u64 {
         self.own_id
     }
 
-    pub async fn check_fingers(&self) {
-        let predecessor = self.predecessor().await;
-        if !Self::check_finger(predecessor).await {
-            self.update_predecessor(None).await;
-        }
-
-        for i in 0..64 {
-            let finger = self.get_finger(i).await;
-            if !Self::check_finger(finger).await {
-                self.update_finger(i, None).await;
-            }
-        }
-    }
-
-    async fn check_finger(finger: Option<Finger>) -> bool {
-        if let Some(finger) = finger {
-            finger.check().await
-        } else {
-            true
-        }
-    }
-
+    /// # Explanation
+    /// Updates the successor to the passed finger.
     pub async fn update_successor(&self, successor: Option<Finger>) {
         self.update_finger(0, successor).await
     }
@@ -96,6 +84,8 @@ impl FingerTable {
         self.get_finger(0).await
     }
 
+    /// # Explanation
+    /// Updates the predecessor to the passed finger.
     pub async fn update_predecessor(&self, predecessor: Option<Finger>) {
         let mut old_predecessor = self.predecessor.lock().await;
         let _ = std::mem::replace(&mut *old_predecessor, predecessor);
@@ -107,6 +97,8 @@ impl FingerTable {
         self.predecessor.lock().await.clone()
     }
 
+    /// # Explanation
+    /// Updates the ith finger to the passed finger.
     pub async fn update_finger(&self, i: usize, finger: Option<Finger>) {
         let mut old_finger = self.table[i].lock().await;
         let _ = std::mem::replace(&mut *old_finger, finger);

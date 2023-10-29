@@ -13,9 +13,10 @@ impl ChordStabilizer {
         ChordStabilizer { finger_table }
     }
 
+    /// # Explanation
+    /// The stabilize function updates the current successor if there is a new one.
+    /// And it notifies the successor of this node's existence.
     pub async fn stabilize(&self) -> Result<()> {
-        // self.finger_table.check_fingers().await;
-
         let mut successor = self
             .finger_table
             .successor()
@@ -43,6 +44,9 @@ impl ChordStabilizer {
         Ok(())
     }
 
+    /// # Explanation
+    /// fix_fingers selects a random finger and updates it by looking for the current successor of own_id + 2^i
+    /// (i being the index of the selected finger).
     pub async fn fix_fingers(&self) -> Result<()> {
         let i: usize = thread_rng().gen_range(1..64);
         let successor = self

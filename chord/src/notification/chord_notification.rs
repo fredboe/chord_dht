@@ -8,7 +8,9 @@ pub type ChordNotifier = Notifier<ChordCharacteristic, ChordNotification>;
 /// # Explantion
 /// The ChordNotification type consists of two elements.
 /// - The DataTo element which specifies that data should be send to another node.
-/// - And the DataFrom element which specifies that data can come from another node.
+/// - The DataFrom element which specifies that data can come from another node.
+/// - And the StoreRangeUpdate element which specifies the current range of ids this node should store.
+///   (so most of the time just the last of these events is interesting)
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum ChordNotification {
     DataTo(TransferNotification),
@@ -20,8 +22,10 @@ pub enum ChordNotification {
 /// The ChordCharacteristic type consists of four elements.
 /// - The AnyDataTo element which accepts any notification of the DataTo format.
 /// - The AnyDataFrom element which acceps any notification of the DataFrom format.
+/// - The AnyStoreRange element which accepts any notification of the StoreRange format.
 /// - The DataTo element which accepts a specific DataTo notification.
-/// - And the DataFrom element which accepts a specific DataFrom notification.
+/// - The DataFrom element which accepts a specific DataFrom notification.
+/// - And the StoreRange element which accepts a specific range update.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum ChordCharacteristic {
     AnyDataTo,
@@ -76,10 +80,16 @@ impl TransferNotification {
         }
     }
 
+    /// # Explanation
+    /// This function creates a TransferNotification that should transfer all
+    /// the ids in the range from left_id to right_id to the specified ip address.
     pub fn from_range(ip: IpAddr, left_id: u64, right_id: u64) -> Self {
         Self::new(ip, left_id, right_id, false)
     }
 
+    /// # Explanation
+    /// This function creates a TransferNotification that should transfer all ids (that are
+    /// currently stored in this node).
     pub fn allow_all(ip: IpAddr) -> Self {
         Self::new(ip, 0, 0, true)
     }
