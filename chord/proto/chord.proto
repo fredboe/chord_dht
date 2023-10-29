@@ -5,13 +5,15 @@ package chord;
 service Node {
   rpc get_id (Empty) returns (Identifier);
 
+  rpc closest_preceding_finger (Identifier) returns (NodeInfo);
+
   rpc find_successor (Identifier) returns (NodeInfo);
-  rpc find_predecessor (Identifier) returns (NodeInfo);
 
   rpc successor (Empty) returns (NodeInfo);
   rpc predecessor (Empty) returns (NodeInfo);
 
   rpc notify (Identifier) returns (Empty);
+  rpc notify_leave (NodeInfo) returns (Empty);
 }
 
 message Empty {}

@@ -1,6 +1,7 @@
 use crate::finger_table::{compute_chord_id, in_store_interval};
 use crate::notification::notifier::Notifier;
 use std::net::IpAddr;
+use std::ops::Range;
 
 pub type ChordNotifier = Notifier<ChordCharacteristic, ChordNotification>;
 
@@ -8,10 +9,11 @@ pub type ChordNotifier = Notifier<ChordCharacteristic, ChordNotification>;
 /// The ChordNotification type consists of two elements.
 /// - The DataTo element which specifies that data should be send to another node.
 /// - And the DataFrom element which specifies that data can come from another node.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub enum ChordNotification {
     DataTo(TransferNotification),
     DataFrom(TransferNotification),
+    StoreRangeUpdate(Range<u64>),
 }
 
 /// # Explanation
@@ -20,12 +22,14 @@ pub enum ChordNotification {
 /// - The AnyDataFrom element which acceps any notification of the DataFrom format.
 /// - The DataTo element which accepts a specific DataTo notification.
 /// - And the DataFrom element which accepts a specific DataFrom notification.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub enum ChordCharacteristic {
     AnyDataTo,
     AnyDataFrom,
+    AnyStoreRange,
     DataTo(TransferNotification),
     DataFrom(TransferNotification),
+    StoreRange(Range<u64>),
 }
 
 impl Into<Vec<ChordCharacteristic>> for ChordNotification {
@@ -40,6 +44,10 @@ impl Into<Vec<ChordCharacteristic>> for ChordNotification {
             ChordNotification::DataFrom(ip) => vec![
                 ChordCharacteristic::AnyDataFrom,
                 ChordCharacteristic::DataFrom(ip),
+            ],
+            ChordNotification::StoreRangeUpdate(range) => vec![
+                ChordCharacteristic::AnyStoreRange,
+                ChordCharacteristic::StoreRange(range),
             ],
         }
     }

@@ -30,8 +30,9 @@ RUN cargo build --release --manifest-path ./demo/Cargo.toml
 FROM ubuntu:22.04
 
 ENV IP=none
-ENV MODE=new
+ENV RUST_LOG=info
+ENV NODE_TYPE=normal
 
 COPY --from=builder /usr/src/chord_dht/demo/target/release/demo /usr/local/bin/chord_demo
 
-CMD ["sh", "-c", "chord_demo", "IP=$IP", "MODE=$MODE"]
+CMD ["sh", "-c", "chord_demo"]

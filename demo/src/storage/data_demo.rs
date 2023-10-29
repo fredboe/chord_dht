@@ -54,7 +54,7 @@ impl SimpleDataHandle {
         storage: Arc<Mutex<HashMap<String, String>>>,
     ) -> Result<oneshot::Sender<()>> {
         let storage_service = SimpleStorage::new(storage.clone());
-        let (shudown_sender, shutdown_receiver) = oneshot::channel();
+        let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         tokio::task::spawn(async move {
             Server::builder()
                 .add_service(DataStorageServer::new(storage_service))
@@ -62,12 +62,13 @@ impl SimpleDataHandle {
                     SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DATA_PORT),
                     async move {
                         shutdown_receiver.await.ok();
+                        log::trace!("Data server shutdown.");
                     },
                 )
                 .await
                 .ok();
         });
-        Ok(shudown_sender)
+        Ok(shutdown_sender)
     }
 
     /// # Explanation
@@ -81,6 +82,7 @@ impl SimpleDataHandle {
             if let Some(subscription) = subscription {
                 Self::handle_transfer_out_subscription(subscription, storage).await;
             }
+            log::trace!("Transfer out task stopped.");
         });
         task_handle
     }
@@ -131,6 +133,8 @@ impl SimpleDataHandle {
             out
         };
 
+        log::trace!("Transfer the data {:?} to {}.", out, transfer_ip);
+
         data_client
             .transfer_data(Request::new(KeyValues { key_values: out }))
             .await?;
@@ -174,18 +178,18 @@ impl SimpleStorage {
 #[tonic::async_trait]
 impl DataStorage for SimpleStorage {
     async fn lookup(&self, request: Request<Key>) -> Result<Response<OptionalValue>, Status> {
+        let key = request.into_inner().key;
+        log::trace!("Lookup for {}.", key);
         let storage = self.storage.lock().await;
-        let optional_value = storage
-            .get(&request.into_inner().key)
-            .cloned()
-            .map(|value| Value { value });
+        let optional_value = storage.get(&key).cloned().map(|value| Value { value });
 
         Ok(Response::new(OptionalValue { optional_value }))
     }
 
     async fn put(&self, request: Request<KeyValue>) -> Result<Response<Empty>, Status> {
-        let mut storage = self.storage.lock().await;
         let KeyValue { key, value } = request.into_inner();
+        log::trace!("Put of {} and {}.", key, value);
+        let mut storage = self.storage.lock().await;
         storage.insert(key, value);
 
         Ok(Response::new(Empty {}))
@@ -195,12 +199,12 @@ impl DataStorage for SimpleStorage {
     /// This function checks with the notifier if the transfer of keys into this node is allowed.
     /// And then it extends the current storage with all the keys in the request.
     async fn transfer_data(&self, request: Request<KeyValues>) -> Result<Response<Empty>, Status> {
+        let key_values = request.into_inner().key_values;
+        log::trace!("Incoming data is {:?}.", key_values);
         // maybe filter all the allowed keys here
         let mut storage = self.storage.lock().await;
         storage.extend(
-            request
-                .into_inner()
-                .key_values
+            key_values
                 .into_iter()
                 .map(|KeyValue { key, value }| (key, value)),
         );

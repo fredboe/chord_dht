@@ -7,3 +7,4 @@ pub mod chord_node;
 mod chord_stabilizer;
 pub mod finger_table;
 pub mod notification;
+mod finger;

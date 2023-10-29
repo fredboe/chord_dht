@@ -6,7 +6,8 @@ services:
         context: .
         dockerfile: Dockerfile
       environment:
-        - MODE=new_network
+        - NODE_TYPE=introducer
+        - RUST_LOG=info
       networks:
         node_network:
           ipv4_address: 172.28.1.1
@@ -17,13 +18,14 @@ services:
       dockerfile: Dockerfile
     environment:
       - IP=172.28.1.1
-      - MODE=join
+      - NODE_TYPE=normal
+      - RUST_LOG=info
     networks:
       - node_network
     depends_on:
       - introducer
     deploy:
-     replicas: 7
+     replicas: 8
 
 networks:
   node_network:

@@ -1,168 +1,55 @@
-use crate::chord_rpc::node_client::NodeClient;
-use crate::chord_rpc::{Empty, Identifier, NodeInfo};
+use crate::finger::Finger;
 use anyhow::Result;
+use rand::random;
 use sha1::{Digest, Sha1};
 use std::net::IpAddr;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time::timeout;
-use tonic::transport::{Channel, Uri};
-use tonic::{Request, Status};
-
-pub const CHORD_PORT: u16 = 32355;
-
-pub struct ChordConnection {
-    ip: IpAddr,
-    client: Option<NodeClient<Channel>>,
-}
-
-impl ChordConnection {
-    pub fn new(ip: IpAddr) -> Self {
-        ChordConnection { ip, client: None }
-    }
-
-    pub async fn client(&mut self) -> Result<&mut NodeClient<Channel>, Status> {
-        if self.client.is_none() {
-            let client = Self::create_chord_client(self.ip).await.ok();
-            self.client = client;
-        }
-
-        self.client.as_mut().ok_or(Status::aborted(
-            "Was not able to connect to the chord node.",
-        ))
-    }
-
-    pub async fn create_chord_client(ip: IpAddr) -> Result<NodeClient<Channel>> {
-        let uri = Uri::builder()
-            .scheme("http")
-            .authority(format!("{}:{}", ip, CHORD_PORT))
-            .path_and_query("/")
-            .build()?;
-        let client = timeout(Duration::from_secs(1), NodeClient::connect(uri)).await??;
-
-        Ok(client)
-    }
-}
-
-#[derive(Clone)]
-pub struct Finger {
-    ip: IpAddr,
-    id: u64,
-    connection: Arc<Mutex<ChordConnection>>,
-}
-
-impl Finger {
-    pub fn new(ip: IpAddr, id: u64) -> Self {
-        let connection = Arc::new(Mutex::new(ChordConnection::new(ip)));
-        Finger { ip, id, connection }
-    }
-
-    /// # Explanation
-    /// This function create the finger from a node info (ip and id).
-    /// An error is returned if the given ip address is not a correct one.
-    pub fn from_info(info: NodeInfo) -> Result<Self, Status> {
-        let ip = info
-            .ip
-            .parse()
-            .map_err(|_| Status::cancelled("Not a correct ip address was given."))?;
-        let id = info.id;
-        Ok(Self::new(ip, id))
-    }
-
-    /// # Returns
-    /// Returns the node's id.
-    pub fn id(&self) -> u64 {
-        self.id
-    }
-
-    /// # Returns
-    /// Returns the node's ip address.
-    pub fn ip(&self) -> IpAddr {
-        self.ip
-    }
-
-    /// # Returns
-    /// Returns the node's info (ip as a string and the id).
-    pub fn info(&self) -> NodeInfo {
-        NodeInfo {
-            ip: self.ip.to_string(),
-            id: self.id,
-        }
-    }
-
-    pub async fn check(&self) -> bool {
-        let mut connection = self.connection.lock().await;
-        if let Ok(client) = connection.client().await {
-            let response = client.get_id(Request::new(Empty {})).await;
-            response.is_ok() && response.unwrap().into_inner().id == self.id
-        } else {
-            false
-        }
-    }
-
-    /// # Explantion
-    /// This function performs a find_successor-request on the client.
-    pub async fn find_successor(&self, id: u64) -> Result<NodeInfo, Status> {
-        let mut connection = self.connection.lock().await;
-        let client = connection.client().await?;
-        let response = client
-            .find_successor(Request::new(Identifier { id }))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    /// # Explantion
-    /// This function performs a find_predecessor-request on the client.
-    pub async fn find_predecessor(&self, id: u64) -> Result<NodeInfo, Status> {
-        let mut connection = self.connection.lock().await;
-        let client = connection.client().await?;
-        let response = client
-            .find_predecessor(Request::new(Identifier { id }))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    /// # Explantion
-    /// This function performs a successor-request on the client.
-    pub async fn successor(&self) -> Result<NodeInfo, Status> {
-        let mut connection = self.connection.lock().await;
-        let client = connection.client().await?;
-        let response = client.successor(Request::new(Empty {})).await?;
-        Ok(response.into_inner())
-    }
-
-    /// # Explantion
-    /// This function performs a predecessor-request on the client.
-    pub async fn predecessor(&self) -> Result<NodeInfo, Status> {
-        let mut connection = self.connection.lock().await;
-        let client = connection.client().await?;
-        let response = client.predecessor(Request::new(Empty {})).await?;
-        Ok(response.into_inner())
-    }
-
-    pub async fn notify(&self, own_id: u64) -> Result<(), Status> {
-        let mut connection = self.connection.lock().await;
-        let client = connection.client().await?;
-        let _ = client
-            .notify(Request::new(Identifier { id: own_id }))
-            .await?;
-        Ok(())
-    }
-}
 
 pub struct FingerTable {
+    own_id: u64,
     predecessor: Mutex<Option<Finger>>,
     table: Vec<Mutex<Option<Finger>>>,
 }
 
 impl FingerTable {
-    pub fn new(predecessor: Mutex<Option<Finger>>, table: Vec<Mutex<Option<Finger>>>) -> Self {
-        FingerTable { predecessor, table }
+    pub fn new(
+        own_id: u64,
+        predecessor: Mutex<Option<Finger>>,
+        table: Vec<Mutex<Option<Finger>>>,
+    ) -> Self {
+        FingerTable {
+            own_id,
+            predecessor,
+            table,
+        }
     }
 
-    pub fn from_successor(successor_info: NodeInfo) -> Result<Self> {
-        let successor = Mutex::new(Some(Finger::from_info(successor_info)?));
+    pub fn for_new_network(own_ip: IpAddr) -> Self {
+        let own_id = random();
+        log::trace!("The own id is {}.", own_id);
+
+        let own_finger = Finger::new(own_ip, own_id);
+        Self::from_successor(own_id, own_finger)
+    }
+
+    pub async fn from_introducer(introducer_addr: IpAddr) -> Result<Self> {
+        let own_id = random();
+        log::trace!("The own id is {}.", own_id);
+
+        let introducer = Finger::new(introducer_addr, 0); // id does not matter
+        let successor_info = introducer.find_successor(own_id).await?;
+        let successor = Finger::from_info(successor_info)?;
+
+        log::trace!(
+            "Initialized the finger table with {:?} as the successor.",
+            successor.info()
+        );
+
+        Ok(Self::from_successor(own_id, successor))
+    }
+
+    fn from_successor(own_id: u64, successor_finger: Finger) -> Self {
+        let successor = Mutex::new(Some(successor_finger));
         let predecessor = Mutex::new(None);
 
         let mut table: Vec<Mutex<Option<Finger>>> = std::iter::repeat_with(|| Mutex::new(None))
@@ -170,7 +57,11 @@ impl FingerTable {
             .collect();
         table[0] = successor;
 
-        Ok(FingerTable::new(predecessor, table))
+        FingerTable::new(own_id, predecessor, table)
+    }
+
+    pub fn own_id(&self) -> u64 {
+        self.own_id
     }
 
     pub async fn check_fingers(&self) {
