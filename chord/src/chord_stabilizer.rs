@@ -17,6 +17,8 @@ impl ChordStabilizer {
     /// The stabilize function updates the current successor if there is a new one.
     /// And it notifies the successor of this node's existence.
     pub async fn stabilize(&self) -> Result<()> {
+        self.finger_table.check_fingers().await;
+
         let mut successor = self
             .finger_table
             .successor()

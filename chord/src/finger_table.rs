@@ -73,6 +73,33 @@ impl FingerTable {
     }
 
     /// # Explanation
+    /// The check_fingers function performs a check for each node in which it is checked
+    /// if the node is alive and returns the correct id.
+    ///
+    /// Any node that fails the check is removed from the finger table.
+    pub async fn check_fingers(&self) {
+        let predecessor = self.predecessor().await;
+        if !Self::check_finger(predecessor).await {
+            self.update_predecessor(None).await;
+        }
+
+        for i in 0..64 {
+            let finger = self.get_finger(i).await;
+            if !Self::check_finger(finger).await {
+                self.update_finger(i, None).await;
+            }
+        }
+    }
+
+    async fn check_finger(finger: Option<Finger>) -> bool {
+        if let Some(finger) = finger {
+            finger.check().await
+        } else {
+            true
+        }
+    }
+
+    /// # Explanation
     /// Updates the successor to the passed finger.
     pub async fn update_successor(&self, successor: Option<Finger>) {
         self.update_finger(0, successor).await
