@@ -1,5 +1,6 @@
 use crate::chord_rpc::node_client::NodeClient;
 use crate::chord_rpc::{Empty, Identifier, NodeInfo};
+use crate::finger_table::ChordId;
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::net::IpAddr;
@@ -134,12 +135,12 @@ impl ChordConnectionPool {
 #[derive(Clone)]
 pub struct Finger {
     ip: IpAddr,
-    id: u64,
+    id: ChordId,
     pool: ChordConnectionPool,
 }
 
 impl Finger {
-    pub fn new(ip: IpAddr, id: u64) -> Self {
+    pub fn new(ip: IpAddr, id: ChordId) -> Self {
         let pool = ChordConnectionPool::new(ip);
         Finger { ip, id, pool }
     }
@@ -158,7 +159,7 @@ impl Finger {
 
     /// # Returns
     /// Returns the node's id.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> ChordId {
         self.id
     }
 
@@ -191,7 +192,7 @@ impl Finger {
 
     /// # Explanation
     /// This function sends a closest_preceding_finger-request to the node.
-    pub async fn closest_preceding_finger(&self, id: u64) -> Result<NodeInfo, Status> {
+    pub async fn closest_preceding_finger(&self, id: ChordId) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
         let response = connection
             .closest_preceding_finger(Request::new(Identifier { id }))
@@ -201,7 +202,7 @@ impl Finger {
 
     /// # Explantion
     /// This function sends a find_successor-request to the node.
-    pub async fn find_successor(&self, id: u64) -> Result<NodeInfo, Status> {
+    pub async fn find_successor(&self, id: ChordId) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
         let response = connection
             .find_successor(Request::new(Identifier { id }))
@@ -227,7 +228,7 @@ impl Finger {
 
     /// # Explanation
     /// This function sends a notify-request to the node.
-    pub async fn notify(&self, own_id: u64) -> Result<(), Status> {
+    pub async fn notify(&self, own_id: ChordId) -> Result<(), Status> {
         let mut connection = self.pool.get_connection().await?;
         let _ = connection
             .notify(Request::new(Identifier { id: own_id }))

@@ -1,4 +1,4 @@
-use crate::finger_table::{compute_chord_id, in_store_interval};
+use crate::finger_table::{compute_chord_id, in_store_interval, ChordId};
 use crate::notification::notifier::Notifier;
 use std::net::IpAddr;
 use std::ops::Range;
@@ -15,7 +15,7 @@ pub type ChordNotifier = Notifier<ChordCharacteristic, ChordNotification>;
 pub enum ChordNotification {
     DataTo(TransferNotification),
     DataFrom(TransferNotification),
-    StoreRangeUpdate(Range<u64>),
+    StoreRangeUpdate(Range<ChordId>),
 }
 
 /// # Explanation
@@ -34,7 +34,7 @@ pub enum ChordCharacteristic {
     AnyStoreRange,
     DataTo(TransferNotification),
     DataFrom(TransferNotification),
-    StoreRange(Range<u64>),
+    StoreRange(Range<ChordId>),
 }
 
 impl Into<Vec<ChordCharacteristic>> for ChordNotification {
@@ -68,13 +68,13 @@ impl Into<Vec<ChordCharacteristic>> for ChordNotification {
 #[derive(Copy, Clone, Hash, Debug)]
 pub struct TransferNotification {
     pub ip: IpAddr,
-    left_id: u64,
-    right_id: u64,
+    left_id: ChordId,
+    right_id: ChordId,
     allow_all: bool,
 }
 
 impl TransferNotification {
-    pub fn new(ip: IpAddr, left_id: u64, right_id: u64, allow_all: bool) -> Self {
+    pub fn new(ip: IpAddr, left_id: ChordId, right_id: ChordId, allow_all: bool) -> Self {
         TransferNotification {
             ip,
             left_id,
@@ -86,7 +86,7 @@ impl TransferNotification {
     /// # Explanation
     /// This function creates a TransferNotification that should transfer all
     /// the ids in the range from left_id to right_id to the specified ip address.
-    pub fn from_range(ip: IpAddr, left_id: u64, right_id: u64) -> Self {
+    pub fn from_range(ip: IpAddr, left_id: ChordId, right_id: ChordId) -> Self {
         Self::new(ip, left_id, right_id, false)
     }
 

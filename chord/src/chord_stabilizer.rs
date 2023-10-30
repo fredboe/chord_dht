@@ -1,5 +1,5 @@
 use crate::finger::Finger;
-use crate::finger_table::{in_ring_interval_exclusive, FingerTable};
+use crate::finger_table::{in_ring_interval_exclusive, FingerTable, CHORD_ID_BITSIZE};
 use anyhow::{anyhow, Result};
 use rand::{thread_rng, Rng};
 use std::sync::Arc;
@@ -79,7 +79,7 @@ impl ChordStabilizer {
     /// fix_fingers selects a random finger and updates it by looking for the current successor of own_id + 2^i
     /// (i being the index of the selected finger).
     async fn fix_fingers(finger_table: Arc<FingerTable>) -> Result<()> {
-        let i: usize = thread_rng().gen_range(1..64);
+        let i: usize = thread_rng().gen_range(1..CHORD_ID_BITSIZE);
         let successor = finger_table
             .successor()
             .await

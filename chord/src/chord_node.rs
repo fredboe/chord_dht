@@ -1,7 +1,9 @@
 use crate::chord_rpc::node_server::Node;
 use crate::chord_rpc::{Empty, Identifier, NodeInfo};
 use crate::finger::Finger;
-use crate::finger_table::{in_ring_interval_exclusive, in_store_interval, FingerTable};
+use crate::finger_table::{
+    in_ring_interval_exclusive, in_store_interval, ChordId, FingerTable, CHORD_ID_BITSIZE,
+};
 use crate::notification::chord_notification::{
     ChordNotification, ChordNotifier, TransferNotification,
 };
@@ -56,10 +58,13 @@ impl Node for ChordNode {
 
         let id = request.into_inner().id;
 
-        for i in 0..64 {
+        for i in 0..CHORD_ID_BITSIZE {
             if let Some(ith_finger) = self.finger_table.get_finger(i).await {
                 if in_ring_interval_exclusive(ith_finger.id(), closest_node.id, id) {
-                    closest_node = ith_finger.info();
+                    // maybe check finger before updating
+                    if ith_finger.check().await {
+                        closest_node = ith_finger.info();
+                    }
                 }
             }
         }
@@ -70,7 +75,6 @@ impl Node for ChordNode {
             closest_node
         );
 
-        // maybe check finger before returning
         Ok(Response::new(closest_node))
     }
 
@@ -211,7 +215,11 @@ impl Node for ChordNode {
 }
 
 impl ChordNode {
-    async fn update_predecessor_on_join(&self, new_predecessor: Finger, old_predecessor_id: u64) {
+    async fn update_predecessor_on_join(
+        &self,
+        new_predecessor: Finger,
+        old_predecessor_id: ChordId,
+    ) {
         self.finger_table
             .update_predecessor(Some(new_predecessor.clone()))
             .await;

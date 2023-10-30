@@ -5,15 +5,18 @@ use sha1::{Digest, Sha1};
 use std::net::IpAddr;
 use tokio::sync::Mutex;
 
+pub type ChordId = u64;
+pub const CHORD_ID_BITSIZE: usize = 64;
+
 pub struct FingerTable {
-    own_id: u64,
+    own_id: ChordId,
     predecessor: Mutex<Option<Finger>>,
     table: Vec<Mutex<Option<Finger>>>,
 }
 
 impl FingerTable {
     pub fn new(
-        own_id: u64,
+        own_id: ChordId,
         predecessor: Mutex<Option<Finger>>,
         table: Vec<Mutex<Option<Finger>>>,
     ) -> Self {
@@ -54,12 +57,12 @@ impl FingerTable {
         Ok(Self::from_successor(own_id, successor))
     }
 
-    fn from_successor(own_id: u64, successor_finger: Finger) -> Self {
+    fn from_successor(own_id: ChordId, successor_finger: Finger) -> Self {
         let successor = Mutex::new(Some(successor_finger));
         let predecessor = Mutex::new(None);
 
         let mut table: Vec<Mutex<Option<Finger>>> = std::iter::repeat_with(|| Mutex::new(None))
-            .take(64)
+            .take(CHORD_ID_BITSIZE)
             .collect();
         table[0] = successor;
 
@@ -68,7 +71,7 @@ impl FingerTable {
 
     /// # Explanation
     /// This function returns this node's id.
-    pub fn own_id(&self) -> u64 {
+    pub fn own_id(&self) -> ChordId {
         self.own_id
     }
 
@@ -83,7 +86,7 @@ impl FingerTable {
             self.update_predecessor(None).await;
         }
 
-        for i in 0..64 {
+        for i in 0..CHORD_ID_BITSIZE {
             let finger = self.get_finger(i).await;
             if !Self::check_finger(finger).await {
                 self.update_finger(i, None).await;
@@ -141,12 +144,12 @@ impl FingerTable {
 /// # Explanation
 /// This function computes the id in the chord ring of a string.
 /// (make sure that this function is consistent in the entire network)
-pub fn compute_chord_id(s: &str) -> u64 {
+pub fn compute_chord_id(s: &str) -> ChordId {
     let mut sha1 = Sha1::default();
     sha1.update(s);
     let hash = sha1.finalize();
 
-    u64::from_be_bytes([
+    ChordId::from_be_bytes([
         hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7],
     ])
 }
@@ -156,14 +159,14 @@ pub fn compute_chord_id(s: &str) -> u64 {
 /// In order to control if the interval borders are open or closed
 /// there need to be passed two addtional parameters (exclusive_left and exclusive_right).
 pub fn in_ring_interval(
-    x: u64,
-    left: u64,
-    right: u64,
+    x: ChordId,
+    left: ChordId,
+    right: ChordId,
     exclusive_left: bool,
     exclusive_right: bool,
 ) -> bool {
-    let left = left.wrapping_add(exclusive_left as u64);
-    let right = right.wrapping_sub(exclusive_right as u64);
+    let left = left.wrapping_add(exclusive_left as ChordId);
+    let right = right.wrapping_sub(exclusive_right as ChordId);
 
     if left <= right {
         left <= x && x <= right
@@ -174,19 +177,19 @@ pub fn in_ring_interval(
 
 /// # Explanation
 /// This function checks if x is in the open ring interval (left, right).
-pub fn in_ring_interval_exclusive(x: u64, left: u64, right: u64) -> bool {
+pub fn in_ring_interval_exclusive(x: ChordId, left: ChordId, right: ChordId) -> bool {
     in_ring_interval(x, left, right, true, true)
 }
 
 /// # Explanation
 /// This function checks if x is in the closed ring interval [left, right].
-pub fn in_ring_interval_inclusive(x: u64, left: u64, right: u64) -> bool {
+pub fn in_ring_interval_inclusive(x: ChordId, left: ChordId, right: ChordId) -> bool {
     in_ring_interval(x, left, right, false, false)
 }
 
 /// # Explanation
 /// This function checks if x is in the store interval (so the left border is open and the right one is closed).
 /// This function can be used to check if a node that has the id right and a predecessor with the id left should store x.
-pub fn in_store_interval(x: u64, left: u64, right: u64) -> bool {
+pub fn in_store_interval(x: ChordId, left: ChordId, right: ChordId) -> bool {
     in_ring_interval(x, left, right, true, false)
 }

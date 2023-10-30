@@ -13,7 +13,6 @@ use std::net::IpAddr;
 use std::process::Command;
 use std::time::Duration;
 
-// replace u64 and 64 with specified types
 // write tests
 // later add a r successor list to mitigate node failures
 #[tokio::main]

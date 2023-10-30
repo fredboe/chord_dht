@@ -2,7 +2,7 @@ use crate::storage::data_demo::DATA_PORT;
 use crate::storage_rpc::data_storage_client::DataStorageClient;
 use crate::storage_rpc::{KeyValue, KeyValues};
 use anyhow::Result;
-use chord::finger_table::{compute_chord_id, in_store_interval};
+use chord::finger_table::{compute_chord_id, in_store_interval, ChordId};
 use chord::notification::chord_notification::{
     ChordCharacteristic, ChordNotification, ChordNotifier, TransferNotification,
 };
@@ -44,7 +44,7 @@ impl SimpleDataDistributor {
 
     fn start_listen_process(
         notifier: Arc<ChordNotifier>,
-        current_range: Arc<Mutex<Range<u64>>>,
+        current_range: Arc<Mutex<Range<ChordId>>>,
         data_out_log: Arc<Mutex<VecDeque<TransferNotification>>>,
     ) -> JoinHandle<()> {
         tokio::task::spawn(async move {
@@ -58,7 +58,7 @@ impl SimpleDataDistributor {
                         ChordNotification::DataTo(transfer_notification) => {
                             log::trace!("New transfer notification: {:?}.", transfer_notification);
                             let mut data_out_log = data_out_log.lock().await;
-                            if data_out_log.len() > 5 {
+                            if data_out_log.len() > 10 {
                                 data_out_log.pop_back();
                             }
                             data_out_log.push_front(transfer_notification);
@@ -79,7 +79,7 @@ impl SimpleDataDistributor {
 
     fn start_distribution_process(
         storage: Arc<Mutex<HashMap<String, String>>>,
-        current_range: Arc<Mutex<Range<u64>>>,
+        current_range: Arc<Mutex<Range<ChordId>>>,
         data_out_log: Arc<Mutex<VecDeque<TransferNotification>>>,
     ) -> (oneshot::Sender<()>, JoinHandle<()>) {
         let (distribution_shutdown, mut distribution_shutdown_receiver) = oneshot::channel();
@@ -108,7 +108,7 @@ impl SimpleDataDistributor {
     }
 
     fn extract_keys_to_transfer(
-        current_range: Range<u64>,
+        current_range: Range<ChordId>,
         data_out_log: &VecDeque<TransferNotification>,
         storage: &mut HashMap<String, String>,
     ) -> HashMap<IpAddr, Vec<KeyValue>> {

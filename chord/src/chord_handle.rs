@@ -4,7 +4,7 @@ use crate::chord_rpc::node_server::NodeServer;
 use crate::chord_rpc::{Empty, Identifier, NodeInfo};
 use crate::chord_stabilizer::ChordStabilizer;
 use crate::finger::{ChordConnection, Finger, CHORD_PORT};
-use crate::finger_table::{compute_chord_id, FingerTable};
+use crate::finger_table::{compute_chord_id, ChordId, FingerTable};
 use crate::notification::chord_notification::{
     ChordNotification, ChordNotifier, TransferNotification,
 };
@@ -140,7 +140,7 @@ impl ChordHandle {
     /// # Explanation
     /// This function returns the node that is responsible for storing the key that has the given id.
     /// (It basically returns the successor of id.)
-    pub async fn find_node_by_id(&self, id: u64) -> Result<IpAddr> {
+    pub async fn find_node_by_id(&self, id: ChordId) -> Result<IpAddr> {
         let mut chord_client = self.chord_client.lock().await;
         let response = chord_client
             .find_successor(Request::new(Identifier { id }))
