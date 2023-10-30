@@ -13,11 +13,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{oneshot, Mutex};
-use tokio::time::interval;
 use tonic::transport::{Channel, Server};
 use tonic::{Request, Status};
-
-const STABILIZE_INTERVAL: Duration = Duration::from_millis(100);
 
 /// # Explanation
 /// This struct is used to interact with the chord network. At creation it joins/create the network.
@@ -30,8 +27,8 @@ const STABILIZE_INTERVAL: Duration = Duration::from_millis(100);
 pub struct ChordHandle {
     chord_client: Mutex<NodeClient<Channel>>,
     notifier: Arc<ChordNotifier>,
+    stabilize_process: ChordStabilizer,
     server_shutdown: oneshot::Sender<()>,
-    stabilize_shutdown: oneshot::Sender<()>,
 }
 
 impl ChordHandle {
@@ -46,15 +43,15 @@ impl ChordHandle {
 
         tokio::time::sleep(Duration::from_millis(250)).await; // give the server some time to start.
 
-        let stabilize_shutdown = Self::start_stabilize_process(finger_table);
+        let stabilize_process = ChordStabilizer::start(finger_table.clone());
 
         let chord_client =
             ChordConnection::create_chord_client(IpAddr::V4(Ipv4Addr::LOCALHOST)).await?;
         let handle = ChordHandle {
             chord_client: Mutex::new(chord_client),
             notifier,
+            stabilize_process,
             server_shutdown,
-            stabilize_shutdown,
         };
         Ok(handle)
     }
@@ -102,34 +99,6 @@ impl ChordHandle {
     }
 
     /// # Explanation
-    /// This function starts the stabilize process that periodically notifies
-    /// the successor of this node's existence and also updates the fingers in the finger table.
-    /// This function returns a channel that can be used to shutdown the process.
-    fn start_stabilize_process(finger_table: Arc<FingerTable>) -> oneshot::Sender<()> {
-        let (stabilize_shutdown, mut stabilize_shutdown_receiver) = oneshot::channel();
-        let stabilizer = ChordStabilizer::new(finger_table);
-        tokio::task::spawn(async move {
-            let mut interval = interval(STABILIZE_INTERVAL);
-
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        stabilizer.stabilize().await.ok();
-                        stabilizer.fix_fingers().await.ok();
-                    },
-                    _ = &mut stabilize_shutdown_receiver => {
-                        break;
-                    }
-                }
-            }
-
-            log::trace!("The stabilize process shutdown.");
-        });
-
-        stabilize_shutdown
-    }
-
-    /// # Explanation
     /// This function can be used to leave the network. It updates the other nodes in the network,
     /// notifies the data layer that a key transfer needs to happen and shuts the server down.
     pub async fn leave(self) -> Result<()> {
@@ -142,8 +111,12 @@ impl ChordHandle {
             )))
             .await;
 
+        self.notifier
+            .notify(ChordNotification::StoreRangeUpdate(0..1)) // setting the store range to nothing
+            .await;
+
         self.notifier.finalize().await;
-        self.stabilize_shutdown.send(()).ok();
+        self.stabilize_process.stop().await;
         self.server_shutdown.send(()).ok();
         Ok(())
     }

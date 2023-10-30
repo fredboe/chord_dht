@@ -119,7 +119,12 @@ impl ChordConnectionPool {
         } else {
             ChordConnection::create_chord_client(self.ip)
                 .await
-                .map_err(|_| Status::aborted(""))?
+                .map_err(|_| {
+                    Status::aborted(format!(
+                        "Was not able to create a connection to the specified ip ({}).",
+                        self.ip
+                    ))
+                })?
         };
 
         Ok(ChordConnection::new(client, self.send_back.clone()))

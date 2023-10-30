@@ -28,6 +28,7 @@ pub enum ChordNotification {
 /// - And the StoreRange element which accepts a specific range update.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum ChordCharacteristic {
+    AnyRangeOrDataTo,
     AnyDataTo,
     AnyDataFrom,
     AnyStoreRange,
@@ -41,6 +42,7 @@ impl Into<Vec<ChordCharacteristic>> for ChordNotification {
         match self {
             ChordNotification::DataTo(ip) => {
                 vec![
+                    ChordCharacteristic::AnyRangeOrDataTo,
                     ChordCharacteristic::AnyDataTo,
                     ChordCharacteristic::DataTo(ip),
                 ]
@@ -50,6 +52,7 @@ impl Into<Vec<ChordCharacteristic>> for ChordNotification {
                 ChordCharacteristic::DataFrom(ip),
             ],
             ChordNotification::StoreRangeUpdate(range) => vec![
+                ChordCharacteristic::AnyRangeOrDataTo,
                 ChordCharacteristic::AnyStoreRange,
                 ChordCharacteristic::StoreRange(range),
             ],
@@ -62,7 +65,7 @@ impl Into<Vec<ChordCharacteristic>> for ChordNotification {
 /// In order to ease the specification of the interval we have two modes.
 /// - The normal mode in which one needs to specify the interval borders directly.
 /// - And the allow_all mode in which every element on the chord ring is accepted.
-#[derive(Copy, Clone, Hash)]
+#[derive(Copy, Clone, Hash, Debug)]
 pub struct TransferNotification {
     pub ip: IpAddr,
     left_id: u64,

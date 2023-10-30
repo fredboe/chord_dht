@@ -13,7 +13,6 @@ const COULD_NOT_CREATE_FINGER: &str = "Was not able to create a finger from the 
 const SUCCESSOR_NOT_FOUND: &str = "Successor not found.";
 const PREDECESSOR_NOT_FOUND: &str = "Predecessor not found.";
 const NO_REMOTE_ADDR: &str = "Could not extract the remote address out of the request.";
-const NO_LOCAL_ADDR: &str = "Could not extract the local address out of the request";
 
 pub struct ChordNode {
     finger_table: Arc<FingerTable>,
@@ -46,34 +45,33 @@ impl Node for ChordNode {
         &self,
         request: Request<Identifier>,
     ) -> Result<Response<NodeInfo>, Status> {
-        let local_addr = request.local_addr();
+        let local_addr = request
+            .local_addr()
+            .map(|addr| addr.ip())
+            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let mut closest_node = NodeInfo {
+            ip: local_addr.to_string(),
+            id: self.finger_table.own_id(),
+        };
+
         let id = request.into_inner().id;
-        for i in (0..64).rev() {
+
+        for i in 0..64 {
             if let Some(ith_finger) = self.finger_table.get_finger(i).await {
-                if in_ring_interval_exclusive(ith_finger.id(), self.finger_table.own_id(), id) {
-                    log::trace!(
-                        "closest_preceding_finger: Closest preceding finger of {} is {:?}.",
-                        id,
-                        ith_finger.info()
-                    );
-                    // maybe check finger before returning
-                    return Ok(Response::new(ith_finger.info()));
+                if in_ring_interval_exclusive(ith_finger.id(), closest_node.id, id) {
+                    closest_node = ith_finger.info();
                 }
             }
         }
 
-        if let Some(local_addr) = local_addr {
-            log::trace!(
-                "closest_preceding_finger: This is the closest preceding finger of {}.",
-                id
-            );
-            Ok(Response::new(NodeInfo {
-                ip: local_addr.ip().to_string(),
-                id: self.finger_table.own_id(),
-            }))
-        } else {
-            Err(Status::aborted(NO_LOCAL_ADDR))
-        }
+        log::trace!(
+            "closest_preceding_finger: The closest preceding finger of {} is {:?}.",
+            id,
+            closest_node
+        );
+
+        // maybe check finger before returning
+        Ok(Response::new(closest_node))
     }
 
     /// # Explanation
@@ -84,7 +82,6 @@ impl Node for ChordNode {
         request: Request<Identifier>,
     ) -> Result<Response<NodeInfo>, Status> {
         let id = request.into_inner().id;
-        log::trace!("find_successor: Looking for the successor of {}.", id);
 
         let mut node = Finger::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.finger_table.own_id());
         let mut node_successor = self
@@ -94,10 +91,8 @@ impl Node for ChordNode {
             .ok_or(Status::aborted(SUCCESSOR_NOT_FOUND))?;
 
         while !in_store_interval(id, node.id(), node_successor.id()) {
-            let next_node = node.closest_preceding_finger(id).await?;
-            let next_node_successor = node_successor.successor().await?;
-            node = Finger::from_info(next_node)?;
-            node_successor = Finger::from_info(next_node_successor)?;
+            node = Finger::from_info(node.closest_preceding_finger(id).await?)?;
+            node_successor = Finger::from_info(node.successor().await?)?;
         }
 
         log::trace!(
@@ -222,17 +217,17 @@ impl ChordNode {
             .await;
 
         self.notifier
-            .notify(ChordNotification::StoreRangeUpdate(
-                new_predecessor.id()..self.finger_table.own_id(),
-            ))
-            .await;
-
-        self.notifier
             .notify(ChordNotification::DataTo(TransferNotification::from_range(
                 new_predecessor.ip(),
                 old_predecessor_id,
                 new_predecessor.id(),
             )))
+            .await;
+
+        self.notifier
+            .notify(ChordNotification::StoreRangeUpdate(
+                new_predecessor.id()..self.finger_table.own_id(),
+            ))
             .await;
     }
 

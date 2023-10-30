@@ -13,6 +13,7 @@ use std::net::IpAddr;
 use std::process::Command;
 use std::time::Duration;
 
+// replace u64 and 64 with specified types
 // write tests
 // later add a r successor list to mitigate node failures
 #[tokio::main]
@@ -65,7 +66,7 @@ async fn demo_procedure_for_normal_node() -> Result<()> {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     for key in keys.iter() {
-        let optional_value = dht_handle.lookup(&key).await;
+        let optional_value = dht_handle.retry_lookup(&key, 5).await;
         log::info!("The lookup for {} was {:?}.", key, optional_value);
     }
 
