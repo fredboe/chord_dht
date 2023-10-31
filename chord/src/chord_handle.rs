@@ -1,7 +1,7 @@
 use crate::chord_node::ChordNode;
 use crate::chord_rpc::node_client::NodeClient;
 use crate::chord_rpc::node_server::NodeServer;
-use crate::chord_rpc::{Empty, Identifier, NodeInfo};
+use crate::chord_rpc::{Empty, Identifier};
 use crate::chord_stabilizer::ChordStabilizer;
 use crate::finger::{ChordConnection, Finger, CHORD_PORT};
 use crate::finger_table::{compute_chord_id, ChordId, FingerTable};
@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{oneshot, Mutex};
 use tonic::transport::{Channel, Server};
-use tonic::{Request, Status};
+use tonic::Request;
 
 /// # Explanation
 /// This struct is used to interact with the chord network. At creation it joins/create the network.
@@ -102,12 +102,21 @@ impl ChordHandle {
     /// This function can be used to leave the network. It updates the other nodes in the network,
     /// notifies the data layer that a key transfer needs to happen and shuts the server down.
     pub async fn leave(self) -> Result<()> {
-        self.update_others_leave().await?;
+        let successor = self.create_successor_client().await?;
+        let predecessor = self.create_predecessor_client().await?;
+        log::trace!("While leaving the successor was {:?}.", successor.info());
+        log::trace!(
+            "While leaving the predecessor was {:?}.",
+            predecessor.info()
+        );
 
-        let successor_ip = self.get_successor_info().await?.ip.parse()?;
+        // stabilize should stop before other nodes are updated
+        self.stabilize_process.stop().await;
+        Self::update_others_leave(successor.clone(), predecessor).await?;
+
         self.notifier
             .notify(ChordNotification::DataTo(TransferNotification::allow_all(
-                successor_ip,
+                successor.ip(),
             )))
             .await;
 
@@ -116,21 +125,13 @@ impl ChordHandle {
             .await;
 
         self.notifier.finalize().await;
-        self.stabilize_process.stop().await;
         self.server_shutdown.send(()).ok();
         Ok(())
     }
 
     /// # Explantion
     /// This function notifies the successor and the predecessor that this node wants to leave.
-    async fn update_others_leave(&self) -> Result<()> {
-        let successor = self.create_successor_client().await?;
-        log::trace!("While leaving the successor was {:?}.", successor.info());
-        let predecessor = self.create_predecessor_client().await?;
-        log::trace!(
-            "While leaving the predecessor was {:?}.",
-            predecessor.info()
-        );
+    async fn update_others_leave(successor: Finger, predecessor: Finger) -> Result<()> {
         predecessor.notify_leave(successor.info()).await?;
         successor.notify_leave(predecessor.info()).await?;
 
@@ -182,17 +183,5 @@ impl ChordHandle {
         let predecessor = Finger::from_info(predecessor_info)?;
 
         Ok(predecessor)
-    }
-
-    /// # Explanation
-    /// This function returns the info (ip and id) of this node's successor.
-    async fn get_successor_info(&self) -> Result<NodeInfo, Status> {
-        let mut chord_client = self.chord_client.lock().await;
-        let successor_info = chord_client
-            .successor(Request::new(Empty {}))
-            .await?
-            .into_inner();
-
-        Ok(successor_info)
     }
 }

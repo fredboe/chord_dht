@@ -244,12 +244,6 @@ impl ChordNode {
             .update_predecessor(Some(new_predecessor.clone()))
             .await;
 
-        self.notifier
-            .notify(ChordNotification::StoreRangeUpdate(
-                new_predecessor.id()..self.finger_table.own_id(),
-            ))
-            .await;
-
         // The old predecessor might send data. Its store range should be (new_predecessor, old_predecessor]
         self.notifier
             .notify(ChordNotification::DataFrom(
@@ -258,6 +252,12 @@ impl ChordNode {
                     new_predecessor.id(),
                     old_predecessor.id(),
                 ),
+            ))
+            .await;
+
+        self.notifier
+            .notify(ChordNotification::StoreRangeUpdate(
+                new_predecessor.id()..self.finger_table.own_id(),
             ))
             .await;
     }

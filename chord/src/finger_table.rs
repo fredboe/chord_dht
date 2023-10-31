@@ -32,7 +32,7 @@ impl FingerTable {
     /// (The successor is set to this.)
     pub fn for_new_network(own_ip: IpAddr) -> Self {
         let own_id = random();
-        log::debug!("The own id is {}.", own_id);
+        log::trace!("The own id is {}.", own_id);
 
         let own_finger = Finger::new(own_ip, own_id);
         Self::from_successor(own_id, own_finger)
@@ -43,7 +43,7 @@ impl FingerTable {
     /// The id of this node is randomly select.
     pub async fn from_introducer(introducer_addr: IpAddr) -> Result<Self> {
         let own_id = random();
-        log::debug!("The own id is {}.", own_id);
+        log::trace!("The own id is {}.", own_id);
 
         let introducer = Finger::new(introducer_addr, 0); // id does not matter
         let successor_info = introducer.find_successor(own_id).await?;

@@ -72,7 +72,7 @@ impl SimpleDataDistributor {
                     }
                 }
 
-                log::debug!("Subscription process stopped.");
+                log::trace!("Subscription process stopped.");
             }
         })
     }
@@ -96,12 +96,16 @@ impl SimpleDataDistributor {
                 };
 
                 if transfer_data.len() > 0 {
-                    log::trace!("Transfer the data {:?}.", transfer_data);
+                    log::trace!(
+                        "Transfer the data {:?} with current range {:?}.",
+                        transfer_data,
+                        current_range.lock().await
+                    );
                 }
                 Self::transfer_data(transfer_data).await;
             }
 
-            log::debug!("Distribution process stopped.");
+            log::trace!("Distribution process stopped.");
         });
 
         (distribution_shutdown, distribution_join)
