@@ -4,7 +4,7 @@ use crate::storage_rpc::{Key, KeyValue};
 use anyhow::{anyhow, Result};
 use chord::chord_handle::ChordHandle;
 use chord::notification::chord_notification::ChordNotifier;
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::Request;
@@ -25,10 +25,10 @@ pub struct SimpleChordDHT {
 impl SimpleChordDHT {
     /// # Explanation
     /// This function creates a new chord network. For the finger table initialization process the own ip is needed.
-    pub async fn new_network(own_ip: IpAddr) -> Result<Self> {
+    pub async fn new_network(own_addr: SocketAddr) -> Result<Self> {
         let notifier = Arc::new(ChordNotifier::new());
         let data_handle = SimpleDataHandle::start(notifier.clone()).await?;
-        let chord_handle = ChordHandle::new_network(own_ip, notifier.clone()).await?;
+        let chord_handle = ChordHandle::new_network(own_addr, notifier.clone()).await?;
         Ok(SimpleChordDHT {
             chord_handle,
             data_handle,
@@ -37,10 +37,10 @@ impl SimpleChordDHT {
 
     /// # Explanation
     /// This function join the chord network the introducer node is located in.
-    pub async fn join(introducer: IpAddr) -> Result<Self> {
+    pub async fn join(introducer: SocketAddr, own_addr: SocketAddr) -> Result<Self> {
         let notifier = Arc::new(ChordNotifier::new());
         let data_server_handle = SimpleDataHandle::start(notifier.clone()).await?;
-        let chord_handle = ChordHandle::join(introducer, notifier.clone()).await?;
+        let chord_handle = ChordHandle::join(introducer, own_addr, notifier.clone()).await?;
         Ok(SimpleChordDHT {
             chord_handle,
             data_handle: data_server_handle,
@@ -51,7 +51,7 @@ impl SimpleChordDHT {
     /// This function finds the node that is responsible for storing the given key. Then a lookup-request
     /// is performed on it.
     pub async fn lookup(&self, key: &str) -> Result<String> {
-        let store_ip = self.chord_handle.find_node(key).await?;
+        let store_ip = self.chord_handle.find_node(key).await?.ip();
         log::trace!("Store node for {} is {}.", key, store_ip);
         let mut data_client = SimpleDataDistributor::create_data_client(store_ip).await?;
         let value_response = data_client
@@ -82,7 +82,7 @@ impl SimpleChordDHT {
     /// This function finds the node that is responsible for storing the given key. Then a put-request
     /// is performed on it.
     pub async fn put(&self, key: String, value: String) -> Result<()> {
-        let store_ip = self.chord_handle.find_node(&key).await?;
+        let store_ip = self.chord_handle.find_node(&key).await?.ip();
         let mut data_client = SimpleDataDistributor::create_data_client(store_ip).await?;
         data_client
             .put(Request::new(KeyValue { key, value }))

@@ -3,7 +3,7 @@ use crate::chord_rpc::{Empty, Identifier, NodeInfo};
 use crate::finger_table::ChordId;
 use anyhow::Result;
 use std::collections::VecDeque;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,10 +36,10 @@ impl ChordConnection {
 
     /// # Explanation
     /// This function creates a client to a chord node.
-    pub async fn create_chord_client(ip: IpAddr) -> Result<NodeClient<Channel>> {
+    pub async fn create_chord_client(addr: SocketAddr) -> Result<NodeClient<Channel>> {
         let uri = Uri::builder()
             .scheme("http")
-            .authority(format!("{}:{}", ip, CHORD_PORT))
+            .authority(format!("{}:{}", addr.ip(), addr.port()))
             .path_and_query("/")
             .build()?;
         let client = timeout(Duration::from_secs(1), NodeClient::connect(uri)).await??;
@@ -79,13 +79,13 @@ impl Drop for ChordConnection {
 /// Each connection is returned to the pool once it is no longer in use.
 #[derive(Clone)]
 pub struct ChordConnectionPool {
-    ip: IpAddr,
+    addr: SocketAddr,
     send_back: mpsc::Sender<NodeClient<Channel>>,
     queue: Arc<Mutex<VecDeque<NodeClient<Channel>>>>,
 }
 
 impl ChordConnectionPool {
-    pub fn new(ip: IpAddr) -> Self {
+    pub fn new(addr: SocketAddr) -> Self {
         let queue = Arc::new(Mutex::new(VecDeque::new()));
         let (send_back, mut back_receiver) = mpsc::channel(32);
 
@@ -101,7 +101,7 @@ impl ChordConnectionPool {
         });
 
         ChordConnectionPool {
-            ip,
+            addr,
             send_back,
             queue,
         }
@@ -118,12 +118,12 @@ impl ChordConnectionPool {
         let client = if let Some(client) = optional_client {
             client
         } else {
-            ChordConnection::create_chord_client(self.ip)
+            ChordConnection::create_chord_client(self.addr.clone())
                 .await
                 .map_err(|_| {
                     Status::aborted(format!(
-                        "Was not able to create a connection to the specified ip ({}).",
-                        self.ip
+                        "Was not able to create a connection to the specified address ({}).",
+                        self.addr.clone()
                     ))
                 })?
         };
@@ -134,15 +134,15 @@ impl ChordConnectionPool {
 
 #[derive(Clone)]
 pub struct Finger {
-    ip: IpAddr,
+    addr: SocketAddr,
     id: ChordId,
     pool: ChordConnectionPool,
 }
 
 impl Finger {
-    pub fn new(ip: IpAddr, id: ChordId) -> Self {
-        let pool = ChordConnectionPool::new(ip);
-        Finger { ip, id, pool }
+    pub fn new(addr: SocketAddr, id: ChordId) -> Self {
+        let pool = ChordConnectionPool::new(addr);
+        Finger { addr, id, pool }
     }
 
     /// # Explanation
@@ -152,9 +152,14 @@ impl Finger {
         let ip = info
             .ip
             .parse()
-            .map_err(|_| Status::cancelled("Not a correct ip address was given."))?;
+            .map_err(|_| Status::aborted("Not a correct ip address was given."))?;
+        let port = info
+            .port
+            .try_into()
+            .map_err(|_| Status::aborted("The given port was not a u16."))?;
         let id = info.id;
-        Ok(Self::new(ip, id))
+
+        Ok(Self::new(SocketAddr::new(ip, port), id))
     }
 
     /// # Returns
@@ -166,14 +171,15 @@ impl Finger {
     /// # Returns
     /// Returns the node's ip address.
     pub fn ip(&self) -> IpAddr {
-        self.ip
+        self.addr.ip()
     }
 
     /// # Returns
     /// Returns the node's info (ip as a string and the id).
     pub fn info(&self) -> NodeInfo {
         NodeInfo {
-            ip: self.ip.to_string(),
+            ip: self.addr.ip().to_string(),
+            port: self.addr.port() as u32,
             id: self.id,
         }
     }
@@ -228,11 +234,9 @@ impl Finger {
 
     /// # Explanation
     /// This function sends a notify-request to the node.
-    pub async fn notify(&self, own_id: ChordId) -> Result<(), Status> {
+    pub async fn notify(&self, info: NodeInfo) -> Result<(), Status> {
         let mut connection = self.pool.get_connection().await?;
-        let _ = connection
-            .notify(Request::new(Identifier { id: own_id }))
-            .await?;
+        let _ = connection.notify(Request::new(info)).await?;
         Ok(())
     }
 

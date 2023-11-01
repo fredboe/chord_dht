@@ -12,7 +12,7 @@ service Node {
   rpc successor (Empty) returns (NodeInfo);
   rpc predecessor (Empty) returns (NodeInfo);
 
-  rpc notify (Identifier) returns (Empty);
+  rpc notify (NodeInfo) returns (Empty);
   rpc notify_leave (NodeInfo) returns (Empty);
 }
 
@@ -20,7 +20,8 @@ message Empty {}
 
 message NodeInfo {
   string ip = 1;
-  uint64 id = 2;
+  uint32 port = 2;
+  uint64 id = 3;
 }
 
 message Identifier {

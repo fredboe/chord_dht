@@ -7,9 +7,10 @@ mod storage;
 
 use crate::dht_demo::SimpleChordDHT;
 use anyhow::{anyhow, Result};
+use chord::finger::CHORD_PORT;
 use rand::Rng;
 use std::error::Error;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::process::Command;
 use std::time::Duration;
 
@@ -37,7 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 async fn demo_procedure_for_introducer_node() -> Result<()> {
     let own_ip = ip_from_env().or(own_ip_from_command())?;
     log::info!("Creating a new network with the start ip {}.", own_ip);
-    let _dht_handle = SimpleChordDHT::new_network(own_ip).await?;
+    let _dht_handle = SimpleChordDHT::new_network(SocketAddr::new(own_ip, CHORD_PORT)).await?;
 
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -46,8 +47,17 @@ async fn demo_procedure_for_introducer_node() -> Result<()> {
 
 async fn demo_procedure_for_normal_node() -> Result<()> {
     let introducer_ip = ip_from_env()?;
-    log::info!("Joining the network through {}.", introducer_ip);
-    let dht_handle = SimpleChordDHT::join(introducer_ip).await?;
+    let own_ip = own_ip_from_command()?;
+    log::info!(
+        "Joining the network through {} with {}.",
+        introducer_ip,
+        own_ip
+    );
+    let dht_handle = SimpleChordDHT::join(
+        SocketAddr::new(introducer_ip, CHORD_PORT),
+        SocketAddr::new(own_ip, CHORD_PORT),
+    )
+    .await?;
 
     let keys: Vec<String> = std::iter::repeat_with(|| generate_3_letter_string())
         .map(|key| key.to_uppercase())

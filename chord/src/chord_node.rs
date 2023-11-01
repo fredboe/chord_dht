@@ -7,11 +7,9 @@ use crate::finger_table::{
 use crate::notification::chord_notification::{
     ChordNotification, ChordNotifier, TransferNotification,
 };
-use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-const COULD_NOT_CREATE_FINGER: &str = "Was not able to create a finger from the given ip.";
 const SUCCESSOR_NOT_FOUND: &str = "Successor not found.";
 const PREDECESSOR_NOT_FOUND: &str = "Predecessor not found.";
 const NO_REMOTE_ADDR: &str = "Could not extract the remote address out of the request.";
@@ -47,17 +45,9 @@ impl Node for ChordNode {
         &self,
         request: Request<Identifier>,
     ) -> Result<Response<NodeInfo>, Status> {
-        let local_addr = request
-            .local_addr()
-            .map(|addr| addr.ip())
-            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
-        let mut closest_node = NodeInfo {
-            ip: local_addr.to_string(),
-            id: self.finger_table.own_id(),
-        };
-
         let id = request.into_inner().id;
 
+        let mut closest_node = self.finger_table.own_info();
         for i in 0..CHORD_ID_BITSIZE {
             if let Some(ith_finger) = self.finger_table.get_finger(i).await {
                 if in_ring_interval_exclusive(ith_finger.id(), closest_node.id, id) {
@@ -87,7 +77,7 @@ impl Node for ChordNode {
     ) -> Result<Response<NodeInfo>, Status> {
         let id = request.into_inner().id;
 
-        let mut node = Finger::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.finger_table.own_id());
+        let mut node = Finger::from_info(self.finger_table.own_info())?; // should not be returned
         let mut node_successor = self
             .finger_table
             .successor()
@@ -142,25 +132,23 @@ impl Node for ChordNode {
     ///
     /// Currently it only works on joins. This might change when each node stores a successor list
     /// (instead of just one successor).
-    async fn notify(&self, request: Request<Identifier>) -> Result<Response<Empty>, Status> {
-        let ip = request
-            .remote_addr()
-            .ok_or(Status::aborted(COULD_NOT_CREATE_FINGER))?
-            .ip();
-        let id = request.into_inner().id;
-
-        let maybe_new_predecessor = Finger::new(ip, id);
+    async fn notify(&self, request: Request<NodeInfo>) -> Result<Response<Empty>, Status> {
+        let maybe_new_predecessor = Finger::from_info(request.into_inner())?;
         let optional_predecessor = self.finger_table.predecessor().await;
 
         match optional_predecessor {
-            Some(predecssor)
-                if in_ring_interval_exclusive(id, predecssor.id(), self.finger_table.own_id()) =>
+            Some(current_predecssor)
+                if in_ring_interval_exclusive(
+                    maybe_new_predecessor.id(),
+                    current_predecssor.id(),
+                    self.finger_table.own_id(),
+                ) =>
             {
                 log::trace!(
                     "notify: Updating the predecessor to {:?}.",
                     maybe_new_predecessor.info()
                 );
-                self.update_predecessor_on_join(maybe_new_predecessor, predecssor.id())
+                self.update_predecessor_on_join(maybe_new_predecessor, current_predecssor.id())
                     .await;
             }
             None => {

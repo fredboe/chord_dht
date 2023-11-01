@@ -8,7 +8,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 
-const STABILIZE_INTERVAL: Duration = Duration::from_millis(100);
+pub const STABILIZE_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct ChordStabilizer {
     stabilize_process_shutdown: oneshot::Sender<()>,
@@ -70,7 +70,7 @@ impl ChordStabilizer {
             }
         }
 
-        successor.notify(finger_table.own_id()).await?;
+        successor.notify(finger_table.own_info()).await?;
 
         Ok(())
     }

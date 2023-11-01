@@ -1,52 +1,54 @@
+use crate::chord_rpc::NodeInfo;
 use crate::finger::Finger;
 use anyhow::Result;
 use rand::random;
 use sha1::{Digest, Sha1};
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use tokio::sync::Mutex;
 
 pub type ChordId = u64;
 pub const CHORD_ID_BITSIZE: usize = 64;
 
 pub struct FingerTable {
-    own_id: ChordId,
+    own_info: NodeInfo,
     predecessor: Mutex<Option<Finger>>,
     table: Vec<Mutex<Option<Finger>>>,
 }
 
 impl FingerTable {
     pub fn new(
-        own_id: ChordId,
+        own_info: NodeInfo,
         predecessor: Mutex<Option<Finger>>,
         table: Vec<Mutex<Option<Finger>>>,
     ) -> Self {
         FingerTable {
-            own_id,
+            own_info,
             predecessor,
             table,
         }
     }
 
-    /// # Explanation
-    /// This function creates a finger table for the first node in a new network.
-    /// (The successor is set to this.)
-    pub fn for_new_network(own_ip: IpAddr) -> Self {
-        let own_id = random();
-        log::trace!("The own id is {}.", own_id);
-
-        let own_finger = Finger::new(own_ip, own_id);
-        Self::from_successor(own_id, own_finger)
+    pub fn for_new_network(own_info: NodeInfo) -> Result<Self> {
+        let own_finger = Finger::from_info(own_info.clone())?;
+        Ok(Self::from_successor(own_finger, own_info))
     }
 
     /// # Explanation
-    /// This function creates a finger table from an introducing node in the network this node should join.
-    /// The id of this node is randomly select.
-    pub async fn from_introducer(introducer_addr: IpAddr) -> Result<Self> {
+    /// This function creates a finger table for the first node in a new network.
+    /// (The successor is set to this.)
+    pub fn for_new_network_with_random_id(own_addr: SocketAddr) -> Result<Self> {
         let own_id = random();
         log::trace!("The own id is {}.", own_id);
+        Self::for_new_network(NodeInfo {
+            ip: own_addr.ip().to_string(),
+            port: own_addr.port() as u32,
+            id: own_id,
+        })
+    }
 
+    pub async fn from_introducer(introducer_addr: SocketAddr, own_info: NodeInfo) -> Result<Self> {
         let introducer = Finger::new(introducer_addr, 0); // id does not matter
-        let successor_info = introducer.find_successor(own_id).await?;
+        let successor_info = introducer.find_successor(own_info.id).await?;
         let successor = Finger::from_info(successor_info)?;
 
         log::trace!(
@@ -54,10 +56,30 @@ impl FingerTable {
             successor.info()
         );
 
-        Ok(Self::from_successor(own_id, successor))
+        Ok(Self::from_successor(successor, own_info))
     }
 
-    fn from_successor(own_id: ChordId, successor_finger: Finger) -> Self {
+    /// # Explanation
+    /// This function creates a finger table from an introducing node in the network this node should join.
+    /// The id of this node is randomly select.
+    pub async fn from_introducer_with_random_id(
+        introducer_addr: SocketAddr,
+        own_addr: SocketAddr,
+    ) -> Result<Self> {
+        let own_id = random();
+        log::trace!("The own id is {}.", own_id);
+        Self::from_introducer(
+            introducer_addr,
+            NodeInfo {
+                ip: own_addr.ip().to_string(),
+                port: own_addr.port() as u32,
+                id: own_id,
+            },
+        )
+        .await
+    }
+
+    fn from_successor(successor_finger: Finger, own_info: NodeInfo) -> Self {
         let successor = Mutex::new(Some(successor_finger));
         let predecessor = Mutex::new(None);
 
@@ -66,13 +88,24 @@ impl FingerTable {
             .collect();
         table[0] = successor;
 
-        FingerTable::new(own_id, predecessor, table)
+        FingerTable::new(own_info, predecessor, table)
     }
 
     /// # Explanation
     /// This function returns this node's id.
     pub fn own_id(&self) -> ChordId {
-        self.own_id
+        self.own_info().id
+    }
+
+    pub fn own_info(&self) -> NodeInfo {
+        self.own_info.clone()
+    }
+
+    pub fn own_addr(&self) -> Result<SocketAddr> {
+        Ok(SocketAddr::new(
+            self.own_info().ip.parse()?,
+            self.own_info().port as u16,
+        ))
     }
 
     /// # Explanation
