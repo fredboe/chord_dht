@@ -3,6 +3,7 @@ use crate::chord_rpc::{Empty, Identifier, NodeInfo};
 use crate::finger_table::ChordId;
 use anyhow::Result;
 use std::collections::VecDeque;
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use tonic::transport::{Channel, Uri};
 use tonic::{Request, Status};
 
 pub const CHORD_PORT: u16 = 32355;
+const TIMEOUT_DURATION: Duration = Duration::from_secs(3);
 
 /// This struct represents a chord connection. It is mainly used as a helping struct in the ChordConnectionPool struct.
 ///
@@ -42,7 +44,7 @@ impl ChordConnection {
             .authority(format!("{}:{}", addr.ip(), addr.port()))
             .path_and_query("/")
             .build()?;
-        let client = timeout(Duration::from_secs(1), NodeClient::connect(uri)).await??;
+        let client = timeout(TIMEOUT_DURATION, NodeClient::connect(uri)).await??;
 
         Ok(client)
     }
@@ -189,7 +191,7 @@ impl Finger {
     pub async fn check(&self) -> bool {
         let connection = self.pool.get_connection().await;
         if let Ok(mut connection) = connection {
-            let response = connection.get_id(Request::new(Empty {})).await;
+            let response = Self::with_timeout(connection.get_id(Request::new(Empty {}))).await;
             response.is_ok() && response.unwrap().into_inner().id == self.id
         } else {
             false
@@ -200,9 +202,10 @@ impl Finger {
     /// This function sends a closest_preceding_finger-request to the node.
     pub async fn closest_preceding_finger(&self, id: ChordId) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
-        let response = connection
-            .closest_preceding_finger(Request::new(Identifier { id }))
-            .await?;
+        let response = Self::with_timeout(
+            connection.closest_preceding_finger(Request::new(Identifier { id })),
+        )
+        .await?;
         Ok(response.into_inner())
     }
 
@@ -210,9 +213,8 @@ impl Finger {
     /// This function sends a find_successor-request to the node.
     pub async fn find_successor(&self, id: ChordId) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
-        let response = connection
-            .find_successor(Request::new(Identifier { id }))
-            .await?;
+        let response =
+            Self::with_timeout(connection.find_successor(Request::new(Identifier { id }))).await?;
         Ok(response.into_inner())
     }
 
@@ -220,7 +222,7 @@ impl Finger {
     /// This function sends a successor-request to the node.
     pub async fn successor(&self) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
-        let response = connection.successor(Request::new(Empty {})).await?;
+        let response = Self::with_timeout(connection.successor(Request::new(Empty {}))).await?;
         Ok(response.into_inner())
     }
 
@@ -228,7 +230,7 @@ impl Finger {
     /// This function sends a predecessor-request to the node.
     pub async fn predecessor(&self) -> Result<NodeInfo, Status> {
         let mut connection = self.pool.get_connection().await?;
-        let response = connection.predecessor(Request::new(Empty {})).await?;
+        let response = Self::with_timeout(connection.predecessor(Request::new(Empty {}))).await?;
         Ok(response.into_inner())
     }
 
@@ -236,7 +238,7 @@ impl Finger {
     /// This function sends a notify-request to the node.
     pub async fn notify(&self, info: NodeInfo) -> Result<(), Status> {
         let mut connection = self.pool.get_connection().await?;
-        let _ = connection.notify(Request::new(info)).await?;
+        let _ = Self::with_timeout(connection.notify(Request::new(info))).await?;
         Ok(())
     }
 
@@ -244,7 +246,14 @@ impl Finger {
     /// This function sends a notify_leave-request to the node.
     pub async fn notify_leave(&self, info: NodeInfo) -> Result<(), Status> {
         let mut connection = self.pool.get_connection().await?;
-        let _ = connection.notify_leave(Request::new(info)).await?;
+        let _ = Self::with_timeout(connection.notify_leave(Request::new(info))).await?;
         Ok(())
+    }
+
+    async fn with_timeout<T, F: Future<Output = Result<T, Status>>>(f: F) -> Result<T, Status> {
+        let result = timeout(TIMEOUT_DURATION, f)
+            .await
+            .map_err(|_| Status::aborted("Timeout."))??;
+        Ok(result)
     }
 }

@@ -87,7 +87,7 @@ impl ChordStabilizer {
 
         let id_to_look_for = finger_table.own_id().wrapping_add(1 << i);
         log::trace!(
-            "Fixing the {} ith finger. Looking for id {}.",
+            "Fixing the {}-th finger. Looking for id {}.",
             i,
             id_to_look_for
         );

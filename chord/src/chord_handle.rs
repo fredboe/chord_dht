@@ -136,23 +136,28 @@ impl ChordHandle {
     /// This function can be used to leave the network. It updates the other nodes in the network,
     /// notifies the data layer that a key transfer needs to happen and shuts the server down.
     pub async fn leave(self) -> Result<()> {
-        let successor = self.create_successor_client().await?;
-        let predecessor = self.create_predecessor_client().await?;
-        log::trace!("While leaving the successor was {:?}.", successor.info());
-        log::trace!(
-            "While leaving the predecessor was {:?}.",
-            predecessor.info()
-        );
-
+        let successor = self.create_successor_client().await;
+        let predecessor = self.create_predecessor_client().await;
         // stabilize should stop before other nodes are updated
         self.stabilize_process.stop().await;
-        Self::update_others_leave(successor.clone(), predecessor).await?;
 
-        self.notifier
-            .notify(ChordNotification::DataTo(TransferNotification::allow_all(
-                successor.ip(),
-            )))
-            .await;
+        if let Ok(successor) = successor {
+            log::trace!("While leaving the successor was {:?}.", successor.info());
+
+            if let Ok(predecessor) = predecessor {
+                log::trace!(
+                    "While leaving the predecessor was {:?}.",
+                    predecessor.info()
+                );
+                Self::update_others_leave(successor.clone(), predecessor).await?;
+            }
+
+            self.notifier
+                .notify(ChordNotification::DataTo(TransferNotification::allow_all(
+                    successor.ip(),
+                )))
+                .await;
+        }
 
         self.notifier
             .notify(ChordNotification::StoreRangeUpdate(0..1)) // setting the store range to nothing
@@ -180,6 +185,7 @@ impl ChordHandle {
         let response = chord_client
             .find_successor(Request::new(Identifier { id }))
             .await?;
+
         let node_info = response.into_inner();
         let store_ip = node_info.ip.parse()?;
         let store_port = node_info.port as u16;
