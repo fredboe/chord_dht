@@ -100,3 +100,11 @@ impl SimpleChordDHT {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn succeeding_test() {
+        assert_eq!(1, 1);
+    }
+}

@@ -176,6 +176,10 @@ impl Finger {
         self.addr.ip()
     }
 
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
     /// # Returns
     /// Returns the node's info (ip as a string and the id).
     pub fn info(&self) -> NodeInfo {

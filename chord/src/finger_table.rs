@@ -79,9 +79,13 @@ impl FingerTable {
         .await
     }
 
-    fn from_successor(successor_finger: Finger, own_info: NodeInfo) -> Self {
-        let successor = Mutex::new(Some(successor_finger));
-        let predecessor = Mutex::new(None);
+    pub fn from_successor(successor_finger: Finger, own_info: NodeInfo) -> Self {
+        Self::from_successor_predecessor(Some(successor_finger), None, own_info)
+    }
+    
+    pub fn from_successor_predecessor(successor_finger: Option<Finger>, predecessor_finger: Option<Finger>, own_info: NodeInfo) -> Self {
+        let successor = Mutex::new(successor_finger);
+        let predecessor = Mutex::new(predecessor_finger);
 
         let mut table: Vec<Mutex<Option<Finger>>> = std::iter::repeat_with(|| Mutex::new(None))
             .take(CHORD_ID_BITSIZE)

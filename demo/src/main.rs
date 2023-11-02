@@ -14,7 +14,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::process::Command;
 use std::time::Duration;
 
-// write tests
 // later add a r successor list to mitigate node failures
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
