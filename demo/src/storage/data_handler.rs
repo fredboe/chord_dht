@@ -12,6 +12,10 @@ use tokio::time::interval;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+/// # Explanation
+/// The SimpleDataHandle is mainly used for starting (and stopping) all the data processes.
+/// Including starting the data server and the notification process which is used for communicating with the chord process
+/// (e.g. for handling data transfers).
 pub struct SimpleDataHandle {
     data_server_shutdown: Option<oneshot::Sender<()>>,
     notification_shutdown: Option<oneshot::Sender<()>>,
@@ -73,10 +77,8 @@ impl SimpleDataHandle {
         });
         shutdown_sender
     }
-}
 
-impl Drop for SimpleDataHandle {
-    fn drop(&mut self) {
+    pub fn stop(&mut self) {
         if let Some(notification_shutdown) = self.notification_shutdown.take() {
             notification_shutdown.send(()).ok();
         }
@@ -86,6 +88,25 @@ impl Drop for SimpleDataHandle {
     }
 }
 
+impl Drop for SimpleDataHandle {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// # Explanation
+/// Implements a data server for handling basic data storage and retrieval operations within a distributed system.
+///
+/// This server offers straightforward functions for manipulating data, focusing on key-value storage paradigms. It is designed
+/// to facilitate easy and efficient data management on individual nodes within a distributed network, such as a chord network.
+///
+/// ## Functions Overview:
+/// - `lookup(key) -> Option<Value>`: Searches for the specified key within this node's storage.
+///                                   Returns the associated value if found, otherwise returns `None` to indicate the absence of the key.
+/// - `put(key, value)`: Inserts or updates the given key-value pair in this node's local storage.
+///                      Ensures that data is readily accessible on this node for future queries.
+/// - `transfer_data(key_values)`: Receives and stores a batch of key-value pairs from another node.
+///                                This function is typically used during node join or leave operations to maintain data consistency across the network.
 #[derive(Clone)]
 pub struct SimpleDataServer {
     node_state: Arc<Mutex<NodeDataState>>,

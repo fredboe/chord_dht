@@ -25,7 +25,7 @@ services:
     depends_on:
       - introducer
     deploy:
-     replicas: 20
+     replicas: 32
 
 networks:
   node_network:

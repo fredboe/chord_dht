@@ -10,14 +10,14 @@ use tonic::transport::{Channel, Uri};
 pub const DATA_PORT: u16 = 43355;
 
 pub struct NodeDataState {
-    pub(crate) range: Range<ChordId>,
+    pub(crate) store_range: Range<ChordId>,
     pub(crate) data: HashMap<String, String>,
 }
 
 impl NodeDataState {
     pub fn new() -> Self {
         Self {
-            range: 0..0,
+            store_range: 0..0,
             data: HashMap::new(),
         }
     }

@@ -16,13 +16,15 @@ use tonic::transport::Server;
 use tonic::Request;
 
 /// # Explanation
-/// This struct is used to interact with the chord network. At creation it joins/create the network.
-/// Then it basically provides one function. The find_node(key) function which returns the successor node of the given key.
-/// This struct also provides a leave function.
+/// Provides an interface for interacting with a chord network, facilitating network participation and key-based node lookup.
 ///
-/// #### Notes:
-/// - use connection pool or finger table instead of chord_client to prevent deadlocks
-/// - be more flexible (inceptor, interval duration etc)
+/// Upon instantiation, this struct either joins an existing chord network or initiates a new one.
+/// The primary outside functionality is the `find_node(key)` method, which locates and returns the successor node responsible for the specified key.
+/// Most of the interesting stuff is happening in the background where the actual chord node is running.
+///
+/// Additionally, a `leave` method is provided to gracefully exit the network. This feature allows for the clean shutdown and
+/// removal of the current node from the network, ensuring network stability and data integrity during node departures.
+
 pub struct ChordHandle {
     chord_connection: ChordConnectionPool,
     notifier: Arc<ChordNotifier>,

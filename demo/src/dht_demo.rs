@@ -10,13 +10,20 @@ use std::time::Duration;
 use tonic::Request;
 
 /// # Explanation
-/// This is a built-in struct for creating your own simple chord network. As a data store it uses a normal HashMap.
-/// There is no protection (e.g. data validation or authentication) built in the data server. Therfore, do not use
-/// this sturct in a professional environment.
+/// A basic implementation of a chord network using a `HashMap` for data storage. This struct facilitates
+/// the creation of a simplified chord network without built-in protections such as data validation or
+/// authentication. It is not recommended for use in production environments due to these limitations.
 ///
-/// The SimpleChordDHT struct provides a lookup and a put function. The key and value type is a normal string.
+/// The implementation operates through two primary processes:
+/// 1. Chord Protocol Process: Handles the operations related to the chord protocol, including node
+///    communication and network maintenance.
+/// 2. Data Management Process: Manages the network's data storage, utilizing a basic `HashMap<String, String>`
+///    to store and retrieve data.
 ///
-/// periodically check if all correct else search for correct successor and put so that every key ends up in the right spot
+/// These processes operate independently for the most part, but there are instances where communication
+/// between them is necessary, particularly for coordinating data transfers across nodes. This inter-process
+/// communication is achieved through a notification system, where the chord protocol process can send
+/// notifications (e.g., `DataTo(...)`) to the data management process for handling.
 pub struct SimpleChordDHT {
     chord_handle: ChordHandle,
     data_handle: SimpleDataHandle,
@@ -36,7 +43,7 @@ impl SimpleChordDHT {
     }
 
     /// # Explanation
-    /// This function join the chord network the introducer node is located in.
+    /// This function joins the chord network the introducer node is located in.
     pub async fn join(introducer: SocketAddr, own_addr: SocketAddr) -> Result<Self> {
         let notifier = Arc::new(ChordNotifier::new());
         let data_server_handle = SimpleDataHandle::start(notifier.clone());
@@ -94,8 +101,12 @@ impl SimpleChordDHT {
     /// With this function one can leave the chord network.
     ///
     /// Be sure to call this function at the end so that no keys are lost in the network.
-    pub async fn leave(self) -> Result<()> {
+    ///
+    /// (Note: This function should probably be called in the drop-function.)
+    pub async fn leave(mut self) -> Result<()> {
         self.chord_handle.leave().await?;
+        tokio::time::sleep(Duration::from_millis(100)).await; // give the notification process some time
+        self.data_handle.stop();
         Ok(())
     }
 }

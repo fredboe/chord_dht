@@ -11,6 +11,16 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::Request;
 
+/// Handles notifications for communication with the chord process.
+///
+/// `SimpleNotificationHandler` utilizes the notification system provided by the chord process to manage and respond to specific events critical for the node's data management responsibilities.
+/// It subscribes to the events `RangeUpdate` and `DataTo`, leveraging these notifications to maintain and
+/// update the node's knowledge of which key-values it is responsible for storing, and to initiate
+/// data transfers when necessary.
+///
+/// ## Subscribed Events:
+/// - **RangeUpdate**: This event updates the handler on the range of key-values that the node should store.
+/// - **DataTo**: Indicates that a data transfer is required, signaling this node to initiate the transfer of specified keys to another node.
 pub struct SimpleNotificationHandler {
     subscription: Subscription<ChordNotification>,
     node_state: Arc<Mutex<NodeDataState>>,
@@ -44,7 +54,7 @@ impl SimpleNotificationHandler {
                 }
                 ChordNotification::StoreRangeUpdate(updated_range) => {
                     let mut node_state = self.node_state.lock().await;
-                    let _ = std::mem::replace(&mut node_state.range, updated_range);
+                    let _ = std::mem::replace(&mut node_state.store_range, updated_range);
                 }
                 _ => unreachable!("Should only be subscribed to DataTo and StoreRangeUpdate."),
             }

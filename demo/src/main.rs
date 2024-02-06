@@ -35,6 +35,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// # Explanation
+/// Creates a new network and then runs the node infinitely long.
 async fn demo_procedure_for_introducer_node() -> Result<()> {
     let own_ip = ip_from_env().or(own_ip_from_command())?;
     log::info!("Creating a new network with the start ip {}.", own_ip);
@@ -45,6 +47,9 @@ async fn demo_procedure_for_introducer_node() -> Result<()> {
     }
 }
 
+/// # Explanation
+/// Joins the network. Then three values are stored in the network. Then the node tries to retrieve
+/// the previously stored values.
 async fn demo_procedure_for_normal_node() -> Result<()> {
     let introducer_ip = ip_from_env()?;
     let own_ip = own_ip_from_command()?;
@@ -79,7 +84,7 @@ async fn demo_procedure_for_normal_node() -> Result<()> {
         log::info!("The lookup for {} was {:?}.", key, optional_value);
     }
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(8)).await;
 
     log::info!("Leaving the network.");
     dht_handle.leave().await?;
