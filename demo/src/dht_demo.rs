@@ -1,6 +1,6 @@
-use crate::storage::data_demo::SimpleDataHandle;
-use crate::storage::data_distributor::SimpleDataDistributor;
+use crate::storage::data_handler::SimpleDataHandle;
 use crate::storage_rpc::{Key, KeyValue};
+use crate::utils::create_data_client;
 use anyhow::{anyhow, Result};
 use chord::chord_handle::ChordHandle;
 use chord::notification::chord_notification::ChordNotifier;
@@ -27,7 +27,7 @@ impl SimpleChordDHT {
     /// This function creates a new chord network. For the finger table initialization process the own ip is needed.
     pub async fn new_network(own_addr: SocketAddr) -> Result<Self> {
         let notifier = Arc::new(ChordNotifier::new());
-        let data_handle = SimpleDataHandle::start(notifier.clone()).await?;
+        let data_handle = SimpleDataHandle::start(notifier.clone());
         let chord_handle = ChordHandle::new_network(own_addr, notifier.clone()).await?;
         Ok(SimpleChordDHT {
             chord_handle,
@@ -39,7 +39,7 @@ impl SimpleChordDHT {
     /// This function join the chord network the introducer node is located in.
     pub async fn join(introducer: SocketAddr, own_addr: SocketAddr) -> Result<Self> {
         let notifier = Arc::new(ChordNotifier::new());
-        let data_server_handle = SimpleDataHandle::start(notifier.clone()).await?;
+        let data_server_handle = SimpleDataHandle::start(notifier.clone());
         let chord_handle = ChordHandle::join(introducer, own_addr, notifier.clone()).await?;
         Ok(SimpleChordDHT {
             chord_handle,
@@ -53,7 +53,7 @@ impl SimpleChordDHT {
     pub async fn lookup(&self, key: &str) -> Result<String> {
         let store_ip = self.chord_handle.find_node(key).await?.ip();
         log::trace!("Store node for {} is {}.", key, store_ip);
-        let mut data_client = SimpleDataDistributor::create_data_client(store_ip).await?;
+        let mut data_client = create_data_client(store_ip).await?;
         let value_response = data_client
             .lookup(Request::new(Key {
                 key: key.to_string(),
@@ -83,7 +83,7 @@ impl SimpleChordDHT {
     /// is performed on it.
     pub async fn put(&self, key: String, value: String) -> Result<()> {
         let store_ip = self.chord_handle.find_node(&key).await?.ip();
-        let mut data_client = SimpleDataDistributor::create_data_client(store_ip).await?;
+        let mut data_client = create_data_client(store_ip).await?;
         data_client
             .put(Request::new(KeyValue { key, value }))
             .await?;
@@ -96,15 +96,6 @@ impl SimpleChordDHT {
     /// Be sure to call this function at the end so that no keys are lost in the network.
     pub async fn leave(self) -> Result<()> {
         self.chord_handle.leave().await?;
-        self.data_handle.stop().await;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn succeeding_test() {
-        assert_eq!(1, 1);
     }
 }

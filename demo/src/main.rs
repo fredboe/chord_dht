@@ -4,6 +4,7 @@ mod storage_rpc {
 
 mod dht_demo;
 mod storage;
+mod utils;
 
 use crate::dht_demo::SimpleChordDHT;
 use anyhow::{anyhow, Result};
