@@ -42,9 +42,8 @@ async fn demo_procedure_for_introducer_node() -> Result<()> {
     log::info!("Creating a new network with the start ip {}.", own_ip);
     let _dht_handle = SimpleChordDHT::new_network(SocketAddr::new(own_ip, CHORD_PORT)).await?;
 
-    loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    Ok(())
 }
 
 /// # Explanation
